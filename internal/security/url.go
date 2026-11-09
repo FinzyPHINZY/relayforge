@@ -45,6 +45,41 @@ func ValidateEndpointURL(ctx context.Context, raw string) error {
 	return nil
 }
 
+func ValidateEndpointURLWithDemo(ctx context.Context, raw, origin string) error {
+	if !isDemoURL(raw, origin) {
+		return ValidateEndpointURL(ctx, raw)
+	}
+	u, _ := url.Parse(raw)
+	lookupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	answers, err := net.DefaultResolver.LookupIPAddr(lookupCtx, u.Hostname())
+	if err != nil || len(answers) == 0 {
+		return errors.New("demo receiver DNS unavailable")
+	}
+	for _, a := range answers {
+		ip, ok := netip.AddrFromSlice(a.IP)
+		if !ok || !ip.Unmap().IsPrivate() {
+			return errors.New("demo receiver must use a private Docker address")
+		}
+	}
+	return nil
+}
+
+func isDemoURL(raw, origin string) bool {
+	if origin == "" {
+		return false
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.Fragment != "" || u.Opaque != "" {
+		return false
+	}
+	o, err := url.Parse(origin)
+	if err != nil || o.Scheme != "http" || o.Host == "" || o.User != nil || o.Path != "" || o.RawQuery != "" || o.Fragment != "" {
+		return false
+	}
+	return u.Scheme == "http" && strings.EqualFold(u.Host, o.Host)
+}
+
 func publicIP(addr netip.Addr) bool {
 	addr = addr.Unmap()
 	if !addr.IsGlobalUnicast() || addr.IsPrivate() || addr.IsLoopback() || addr.IsLinkLocalUnicast() {

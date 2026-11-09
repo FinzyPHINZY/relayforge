@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"math/rand"
+	"sync"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -73,11 +74,13 @@ func nullableError(code string) any {
 }
 
 type Engine struct {
-	DB          *pgxpool.Pool
-	Sender      Sender
-	WorkerID    string
-	Concurrency int
-	Lease       time.Duration
+	DB           *pgxpool.Pool
+	Sender       Sender
+	WorkerID     string
+	Concurrency  int
+	Lease        time.Duration
+	DrainTimeout time.Duration
+	SendFunc     func(context.Context, Claimed) Result
 }
 
 func (e Engine) Run(ctx context.Context) {
@@ -87,14 +90,37 @@ func (e Engine) Run(ctx context.Context) {
 	if e.Lease <= 0 {
 		e.Lease = 45 * time.Second
 	}
+	if e.DrainTimeout <= 0 {
+		e.DrainTimeout = 35 * time.Second
+	}
+	sendCtx, cancelSend := context.WithCancel(context.WithoutCancel(ctx))
+	defer cancelSend()
+	var workers sync.WaitGroup
 	for i := 0; i < e.Concurrency; i++ {
-		go e.workLoop(ctx, fmt.Sprintf("%s-%d", e.WorkerID, i))
+		workers.Add(1)
+		go func(i int) { defer workers.Done(); e.workLoop(ctx, sendCtx, fmt.Sprintf("%s-%d", e.WorkerID, i)) }(i)
 	}
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
+			done := make(chan struct{})
+			go func() { workers.Wait(); close(done) }()
+			timer := time.NewTimer(e.DrainTimeout)
+			defer timer.Stop()
+			select {
+			case <-done:
+				return
+			case <-timer.C:
+				slog.Warn("worker drain deadline reached")
+				cancelSend()
+				select {
+				case <-done:
+				case <-time.After(5 * time.Second):
+					slog.Error("worker forced stop deadline reached")
+				}
+			}
 			return
 		case <-ticker.C:
 			count, err := ReclaimExpired(ctx, e.DB, 100)
@@ -108,25 +134,30 @@ func (e Engine) Run(ctx context.Context) {
 	}
 }
 
-func (e Engine) workLoop(ctx context.Context, workerID string) {
-	for ctx.Err() == nil {
-		claim, err := ClaimOne(ctx, e.DB, workerID, e.Lease)
+func (e Engine) workLoop(claimCtx, sendCtx context.Context, workerID string) {
+	for claimCtx.Err() == nil {
+		claim, err := ClaimOne(claimCtx, e.DB, workerID, e.Lease)
 		if err != nil {
-			if ctx.Err() == nil {
+			if claimCtx.Err() == nil {
 				slog.Error("claim failed", "error", err)
 			}
-			pause(ctx, time.Second)
+			pause(claimCtx, time.Second)
 			continue
 		}
 		if claim == nil {
-			pause(ctx, time.Second)
+			pause(claimCtx, time.Second)
 			continue
 		}
-		attemptCtx, span := otel.Tracer("relayforge/worker").Start(ctx, "webhook.attempt")
-		result := e.Sender.Send(attemptCtx, *claim)
+		attemptCtx, span := otel.Tracer("relayforge/worker").Start(sendCtx, "webhook.attempt")
+		var result Result
+		if e.SendFunc != nil {
+			result = e.SendFunc(attemptCtx, *claim)
+		} else {
+			result = e.Sender.Send(attemptCtx, *claim)
+		}
 		applied, err := Complete(attemptCtx, e.DB, *claim, result)
 		span.End()
-		if err != nil && ctx.Err() == nil {
+		if err != nil && sendCtx.Err() == nil {
 			slog.Error("completion failed", "delivery_id", claim.ID, "error", err)
 		}
 		if !applied && err == nil {

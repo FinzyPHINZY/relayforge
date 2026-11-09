@@ -24,16 +24,17 @@ type Result struct {
 }
 
 type Sender struct {
-	DB              *pgxpool.Pool
-	EncryptionKey   []byte
-	EncryptionKeyID string
-	AllowHTTPTest   bool
+	DB                 *pgxpool.Pool
+	EncryptionKey      []byte
+	EncryptionKeyID    string
+	AllowHTTPTest      bool
+	DemoReceiverOrigin string
 }
 
 func (s Sender) Send(ctx context.Context, c Claimed) Result {
 	started := time.Now()
 	result := Result{Outcome: "unknown"}
-	client, err := security.PinnedClient(ctx, c.DestinationURL, c.Timeout, s.AllowHTTPTest)
+	client, err := security.PinnedClientWithDemo(ctx, c.DestinationURL, c.Timeout, s.AllowHTTPTest, s.DemoReceiverOrigin)
 	if err != nil {
 		return Result{Outcome: "security_blocked", ErrorCode: "destination_blocked", Duration: time.Since(started)}
 	}

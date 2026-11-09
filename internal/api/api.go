@@ -8,7 +8,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,11 +22,18 @@ import (
 )
 
 type Server struct {
-	DB              *pgxpool.Pool
-	EncryptionKey   []byte
-	EncryptionKeyID string
+	DB                                  *pgxpool.Pool
+	EncryptionKey                       []byte
+	EncryptionKeyID                     string
+	DemoReceiverOrigin                  string
+	EventRateLimit, ManagementRateLimit int
+	limitMu                             sync.Mutex
+	limitEntries                        map[string]rateEntry
+	lastLimitCleanup                    time.Time
+	rateNow                             func() time.Time
 }
 type principal struct {
+	KeyID  string
 	OrgID  string
 	Scopes map[string]bool
 }
@@ -38,6 +47,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/health/ready", s.ready)
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(s.authenticate)
+		r.Use(s.rateLimit)
 		r.With(require("events:write")).Post("/events", s.createEvent)
 		r.With(require("events:read")).Get("/events", s.listEvents)
 		r.With(require("events:read")).Get("/events/{id}", s.getEvent)
@@ -78,9 +88,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			return
 		}
 		var hash []byte
-		var orgID string
+		var orgID, keyID string
 		var scopes []string
-		err = s.DB.QueryRow(r.Context(), `SELECT k.key_hash, k.organization_id, k.scopes FROM api_keys k JOIN organizations o ON o.id=k.organization_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND o.status='active'`, prefix).Scan(&hash, &orgID, &scopes)
+		err = s.DB.QueryRow(r.Context(), `SELECT k.id,k.key_hash, k.organization_id, k.scopes FROM api_keys k JOIN organizations o ON o.id=k.organization_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND o.status='active'`, prefix).Scan(&keyID, &hash, &orgID, &scopes)
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem(w, 401, "unauthorized", "Invalid API key")
 			return
@@ -97,7 +107,65 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		for _, scope := range scopes {
 			set[scope] = true
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, principal{OrgID: orgID, Scopes: set})))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, principal{KeyID: keyID, OrgID: orgID, Scopes: set})))
+	})
+}
+
+type rateEntry struct {
+	window int64
+	count  int
+}
+
+func (s *Server) rateLimit(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := r.Context().Value(principalKey).(principal)
+		category := "management"
+		limit := s.ManagementRateLimit
+		if r.Method == http.MethodPost && r.URL.Path == "/v1/events" {
+			category = "events"
+			limit = s.EventRateLimit
+		}
+		if limit <= 0 {
+			if category == "events" {
+				limit = 600
+			} else {
+				limit = 120
+			}
+		}
+		now := time.Now()
+		if s.rateNow != nil {
+			now = s.rateNow()
+		}
+		window := now.Unix() / 60
+		key := p.KeyID + ":" + category
+		s.limitMu.Lock()
+		if s.limitEntries == nil {
+			s.limitEntries = make(map[string]rateEntry)
+		}
+		if now.Sub(s.lastLimitCleanup) >= time.Minute {
+			for k, v := range s.limitEntries {
+				if v.window < window {
+					delete(s.limitEntries, k)
+				}
+			}
+			s.lastLimitCleanup = now
+		}
+		entry := s.limitEntries[key]
+		if entry.window != window {
+			entry = rateEntry{window: window}
+		}
+		allowed := entry.count < limit
+		if allowed {
+			entry.count++
+			s.limitEntries[key] = entry
+		}
+		s.limitMu.Unlock()
+		if !allowed {
+			w.Header().Set("Retry-After", strconv.FormatInt(60-now.Unix()%60, 10))
+			problem(w, 429, "rate_limited", "Request rate limit exceeded")
+			return
+		}
+		next.ServeHTTP(w, r)
 	})
 }
 

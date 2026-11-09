@@ -20,7 +20,12 @@ import (
 	"webhook_delivery/internal/security"
 )
 
-func setup(t *testing.T) (*pgxpool.Pool, *httptest.Server) {
+func setup(t testing.TB) (*pgxpool.Pool, *httptest.Server) {
+	pool, server, _ := setupWithContainer(t)
+	return pool, server
+}
+
+func setupWithContainer(t testing.TB) (*pgxpool.Pool, *httptest.Server, *postgres.PostgresContainer) {
 	t.Helper()
 	ctx := context.Background()
 	container, err := postgres.Run(ctx, "postgres:17-alpine", postgres.WithDatabase("webhooks"), postgres.WithUsername("webhooks"), postgres.WithPassword("webhooks"), postgres.BasicWaitStrategies())
@@ -40,7 +45,7 @@ func setup(t *testing.T) (*pgxpool.Pool, *httptest.Server) {
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("PostgreSQL did not accept a connection after readiness: %v", err)
 	}
-	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql", "../../db/migrations/000003_recovery.up.sql"} {
+	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql", "../../db/migrations/000003_recovery.up.sql", "../../db/migrations/000004_retention.up.sql"} {
 		schema, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -49,15 +54,15 @@ func setup(t *testing.T) (*pgxpool.Pool, *httptest.Server) {
 			t.Fatal(err)
 		}
 	}
-	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY); INSERT INTO schema_migrations (version) VALUES (1),(2),(3)`, pgx.QueryExecModeSimpleProtocol); err != nil {
+	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY); INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4)`, pgx.QueryExecModeSimpleProtocol); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer((&api.Server{DB: pool, EncryptionKey: bytes.Repeat([]byte{1}, 32), EncryptionKeyID: "test"}).Router())
 	t.Cleanup(server.Close)
-	return pool, server
+	return pool, server, container
 }
 
-func tenantKey(t *testing.T, pool *pgxpool.Pool, name string) (string, string) {
+func tenantKey(t testing.TB, pool *pgxpool.Pool, name string) (string, string) {
 	t.Helper()
 	ctx := context.Background()
 	org, err := id.New()
@@ -87,7 +92,7 @@ func tenantKey(t *testing.T, pool *pgxpool.Pool, name string) (string, string) {
 	return org, raw
 }
 
-func request(t *testing.T, method, url, key, body string) (*http.Response, []byte) {
+func request(t testing.TB, method, url, key, body string) (*http.Response, []byte) {
 	t.Helper()
 	r, err := http.NewRequest(method, url, bytes.NewBufferString(body))
 	if err != nil {

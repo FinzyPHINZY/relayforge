@@ -16,15 +16,20 @@ import (
 // address. Each call creates a fresh transport so no prior connection bypasses
 // DNS revalidation. HTTP is restricted to loopback test fixtures when enabled.
 func PinnedClient(ctx context.Context, raw string, timeout time.Duration, allowHTTPTest bool) (*http.Client, error) {
-	return pinnedClientWithLookup(ctx, raw, timeout, allowHTTPTest, net.DefaultResolver.LookupIPAddr)
+	return pinnedClientWithLookup(ctx, raw, timeout, allowHTTPTest, "", net.DefaultResolver.LookupIPAddr)
 }
 
-func pinnedClientWithLookup(ctx context.Context, raw string, timeout time.Duration, allowHTTPTest bool, lookup func(context.Context, string) ([]net.IPAddr, error)) (*http.Client, error) {
+func PinnedClientWithDemo(ctx context.Context, raw string, timeout time.Duration, allowHTTPTest bool, origin string) (*http.Client, error) {
+	return pinnedClientWithLookup(ctx, raw, timeout, allowHTTPTest, origin, net.DefaultResolver.LookupIPAddr)
+}
+
+func pinnedClientWithLookup(ctx context.Context, raw string, timeout time.Duration, allowHTTPTest bool, origin string, lookup func(context.Context, string) ([]net.IPAddr, error)) (*http.Client, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
 		return nil, errors.New("invalid destination URL")
 	}
-	if u.Scheme != "https" && !(allowHTTPTest && u.Scheme == "http") {
+	demo := isDemoURL(raw, origin)
+	if u.Scheme != "https" && !(allowHTTPTest && u.Scheme == "http") && !demo {
 		return nil, errors.New("HTTPS required")
 	}
 	port := u.Port()
@@ -61,7 +66,10 @@ func pinnedClientWithLookup(ctx context.Context, raw string, timeout time.Durati
 		if u.Scheme == "https" && !publicIP(ip) {
 			return nil, errors.New("blocked destination address")
 		}
-		if u.Scheme == "http" && !ip.IsLoopback() {
+		if u.Scheme == "http" && demo && !ip.IsPrivate() {
+			return nil, errors.New("demo receiver must use private Docker address")
+		}
+		if u.Scheme == "http" && !demo && !ip.IsLoopback() {
 			return nil, errors.New("test HTTP must use loopback")
 		}
 	}

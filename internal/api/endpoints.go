@@ -70,7 +70,7 @@ func (s *Server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in, 16*1024) {
 		return
 	}
-	if len(in.URL) > 2048 || security.ValidateEndpointURL(r.Context(), in.URL) != nil || len(in.Description) > 1000 || !validEventTypes(in.EventTypes) {
+	if len(in.URL) > 2048 || security.ValidateEndpointURLWithDemo(r.Context(), in.URL, s.DemoReceiverOrigin) != nil || len(in.Description) > 1000 || !validEventTypes(in.EventTypes) {
 		problem(w, 422, "invalid_endpoint", "Invalid endpoint configuration")
 		return
 	}
@@ -274,7 +274,7 @@ func (s *Server) patchEndpoint(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &in, 16*1024) {
 		return
 	}
-	if in.URL != nil && (len(*in.URL) > 2048 || security.ValidateEndpointURL(r.Context(), *in.URL) != nil) {
+	if in.URL != nil && (len(*in.URL) > 2048 || security.ValidateEndpointURLWithDemo(r.Context(), *in.URL, s.DemoReceiverOrigin) != nil) {
 		problem(w, 422, "invalid_endpoint", "Invalid URL")
 		return
 	}
