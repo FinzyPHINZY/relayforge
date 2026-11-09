@@ -52,6 +52,15 @@ func main() {
 		}
 		concurrency = n
 	}
-	engine := delivery.Engine{DB: pool, Sender: delivery.Sender{DB: pool, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID}, WorkerID: workerID, Concurrency: concurrency, Lease: 45 * time.Second}
+	drainSeconds := 35
+	if raw := os.Getenv("WORKER_DRAIN_SECONDS"); raw != "" {
+		n, e := strconv.Atoi(raw)
+		if e != nil || n < 1 || n > 40 {
+			slog.Error("invalid worker drain seconds")
+			os.Exit(1)
+		}
+		drainSeconds = n
+	}
+	engine := delivery.Engine{DB: pool, Sender: delivery.Sender{DB: pool, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, DemoReceiverOrigin: cfg.DemoReceiverOrigin}, WorkerID: workerID, Concurrency: concurrency, Lease: 45 * time.Second, DrainTimeout: time.Duration(drainSeconds) * time.Second}
 	engine.Run(ctx)
 }

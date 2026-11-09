@@ -32,6 +32,9 @@ services:
       DATABASE_URL: postgres://webhooks:webhooks@postgres:5432/webhooks?sslmode=disable
       ENCRYPTION_KEY_BASE64: ${ENCRYPTION_KEY_BASE64:?Set ENCRYPTION_KEY_BASE64 in .env}
       ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:-local-v1}
+      EVENT_RATE_LIMIT_PER_MINUTE: ${EVENT_RATE_LIMIT_PER_MINUTE:-600}
+      MANAGEMENT_RATE_LIMIT_PER_MINUTE: ${MANAGEMENT_RATE_LIMIT_PER_MINUTE:-120}
+      DEMO_RECEIVER_ORIGIN: ${DEMO_RECEIVER_ORIGIN:-}
     depends_on:
       migrate: {condition: service_completed_successfully}
     healthcheck:
@@ -45,6 +48,7 @@ services:
       args: {TARGET: dispatcher}
     environment:
       DATABASE_URL: postgres://webhooks:webhooks@postgres:5432/webhooks?sslmode=disable
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
     depends_on:
       migrate: {condition: service_completed_successfully}
     healthcheck:
@@ -61,10 +65,25 @@ services:
       ENCRYPTION_KEY_BASE64: ${ENCRYPTION_KEY_BASE64:?Set ENCRYPTION_KEY_BASE64 in .env}
       ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:-local-v1}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
+      WORKER_DRAIN_SECONDS: ${WORKER_DRAIN_SECONDS:-35}
+      DEMO_RECEIVER_ORIGIN: ${DEMO_RECEIVER_ORIGIN:-}
+    stop_grace_period: 45s
     depends_on:
       migrate: {condition: service_completed_successfully}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+  receiver:
+    profiles: ["demo"]
+    build:
+      context: .
+      args: {TARGET: demo-receiver}
+    ports:
+      - "127.0.0.1:${DEMO_RECEIVER_HOST_PORT:-8090}:8090"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8090/health/live"]
       interval: 5s
       timeout: 3s
       retries: 5

@@ -1,0 +1,3 @@
+DROP INDEX deliveries_org_status_created_idx;
+DROP INDEX idempotency_records_expiry_idx;
+DROP INDEX events_expiry_idx;

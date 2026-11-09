@@ -6,6 +6,7 @@ sql:
       - "db/migrations/000001_foundation.up.sql"
       - "db/migrations/000002_delivery_engine.up.sql"
       - "db/migrations/000003_recovery.up.sql"
+      - "db/migrations/000004_retention.up.sql"
     gen:
       go:
         package: "sqlc"
