@@ -21,6 +21,46 @@ type ApiKey struct {
 	RevokedAt      pgtype.Timestamptz
 }
 
+type Delivery struct {
+	ID                     string
+	OrganizationID         string
+	EventID                string
+	EndpointID             string
+	RunNumber              int32
+	ReplayedFromDeliveryID pgtype.UUID
+	DestinationUrl         string
+	TimeoutMs              int32
+	MaxAttempts            int32
+	Status                 string
+	AttemptCount           int32
+	NextAttemptAt          pgtype.Timestamptz
+	LeaseOwner             pgtype.Text
+	LeaseExpiresAt         pgtype.Timestamptz
+	LeaseGeneration        int64
+	LastHttpStatus         pgtype.Int4
+	LastErrorCode          pgtype.Text
+	CreatedAt              pgtype.Timestamptz
+	UpdatedAt              pgtype.Timestamptz
+	CompletedAt            pgtype.Timestamptz
+}
+
+type DeliveryAttempt struct {
+	ID              string
+	OrganizationID  string
+	DeliveryID      string
+	AttemptNumber   int32
+	WorkerID        string
+	LeaseGeneration int64
+	SigningSecretID pgtype.UUID
+	StartedAt       pgtype.Timestamptz
+	FinishedAt      pgtype.Timestamptz
+	DurationMs      pgtype.Int4
+	HttpStatus      pgtype.Int4
+	Outcome         string
+	ErrorCode       pgtype.Text
+	ResponseExcerpt pgtype.Text
+}
+
 type Endpoint struct {
 	ID             string
 	OrganizationID string
