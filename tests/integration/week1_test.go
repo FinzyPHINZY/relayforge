@@ -40,13 +40,14 @@ func setup(t *testing.T) (*pgxpool.Pool, *httptest.Server) {
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("PostgreSQL did not accept a connection after readiness: %v", err)
 	}
-	schema, err := os.ReadFile("../../db/migrations/000001_foundation.up.sql")
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = pool.Exec(ctx, string(schema), pgx.QueryExecModeSimpleProtocol)
-	if err != nil {
-		t.Fatal(err)
+	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql"} {
+		schema, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, string(schema), pgx.QueryExecModeSimpleProtocol); err != nil {
+			t.Fatal(err)
+		}
 	}
 	server := httptest.NewServer((&api.Server{DB: pool, EncryptionKey: bytes.Repeat([]byte{1}, 32), EncryptionKeyID: "test"}).Router())
 	t.Cleanup(server.Close)

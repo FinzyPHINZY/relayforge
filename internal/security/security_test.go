@@ -26,6 +26,13 @@ func TestKeyAndEncryption(t *testing.T) {
 	if err != nil || len(ciphertext) == 0 || len(nonce) != 12 || bytes.Contains(ciphertext, []byte(secret)) {
 		t.Fatal("secret encryption failed")
 	}
+	plain, err := Decrypt(bytes.Repeat([]byte{1}, 32), ciphertext, nonce, "endpoint-id")
+	if err != nil || plain != secret {
+		t.Fatalf("secret decrypt failed: %v", err)
+	}
+	if _, err := Decrypt(bytes.Repeat([]byte{1}, 32), ciphertext, nonce, "other-endpoint"); err == nil {
+		t.Fatal("wrong endpoint context decrypted secret")
+	}
 }
 
 func TestEndpointURLRejectsPrivateTargets(t *testing.T) {
