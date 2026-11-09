@@ -1,46 +1,96 @@
-# Reliable Webhook Delivery Platform
+# RelayForge
 
-Week 1 is complete. The API accepts tenant-scoped events into PostgreSQL and records an outbox row in the same transaction. PostgreSQL integration tests and a Compose smoke check passed. Dispatch and HTTP delivery are planned for Week 2; see [PRODUCT.md](PRODUCT.md) and [Week 1 plan](docs/week-1-plan.md).
+RelayForge is a multi-tenant service for accepting events and delivering signed HTTP webhooks to subscribed endpoints. It stores accepted events in PostgreSQL, creates endpoint-specific deliveries through an outbox dispatcher, and records each delivery attempt so operators can investigate failures and replay exhausted deliveries.
 
-## Local setup
+The product specification defines the API, security requirements, delivery state machine, failure cases, and acceptance gates. The quickstart below exercises the ingestion API. It does not send a webhook; the dispatcher and worker are separate components in the product architecture.
 
-Requires Go 1.25+, Docker Compose, and sqlc. A verified Go 1.27.3 binary is available locally through `scripts/with-local-go`; it uses writable workspace caches and takes precedence over the older system Go. Create `.env` from `.env.example` and set `ENCRYPTION_KEY_BASE64` to a random 32-byte key encoded as base64 (for example, `openssl rand -base64 32`). Keep that key private.
+## Delivery contract
 
-```sh
-scripts/with-local-go go mod tidy
-sqlc generate
-docker compose up --build
+| Property | Contract |
+| --- | --- |
+| Durable acceptance | `POST /v1/events` returns `202` only after the event and outbox row commit in one PostgreSQL transaction. |
+| Idempotent ingestion | Repeating a request with the same organization, idempotency key, type, and payload returns the original event ID. Reusing the key for different content returns `409`. |
+| Delivery | HTTP attempts are at least once. A receiver can see duplicates, including when its acknowledgment is lost. |
+| Acknowledgment | Any HTTP 2xx acknowledges an attempt; it does not prove the receiver completed downstream work. |
+| Ordering | v1 does not guarantee event order across endpoints or concurrent attempts. |
+| Receiver deduplication | A stable `webhook-id` identifies a delivery run across retries. Receivers should deduplicate with it. |
+| Tenant isolation | API keys belong to one organization; resource queries are constrained by organization ID. |
+
+The planned webhook request includes `webhook-id`, `webhook-timestamp`, `webhook-attempt`, and `webhook-signature` headers. The signature is `v1,<base64(HMAC-SHA256(secret, timestamp + "." + raw_body_bytes))>`. Receivers should compare signatures in constant time, check timestamp freshness, and deduplicate by `webhook-id`.
+
+## Architecture
+
+```text
+Publisher → Go/Chi API → PostgreSQL event + outbox → 202 Accepted
+                                  ↓
+                         Outbox dispatcher
+                                  ↓
+                         Durable deliveries
+                                  ↓
+                    Go workers → signed HTTP POST
+                                  ↓
+                      Attempts, retry, replay
 ```
 
-Compose defaults to host ports 5432 and 8080. If either is occupied, set `POSTGRES_HOST_PORT` and `API_HOST_PORT` before starting Compose, then use those ports in the bootstrap and API examples below.
+PostgreSQL is the source of truth for accepted events, outbox records, delivery state, leases, and attempts. The custom Go worker engine uses bounded requests and database leases with fencing generations. Redis, accessed through go-redis, is reserved for P1 distributed throttling; it is never the durable delivery queue. The P1 dashboard uses Next.js, TypeScript, Tailwind CSS, and shadcn/ui.
 
-Provision an organization and API key from the host:
+The backend uses Go, Chi, pgx, and sqlc, with OpenTelemetry for tracing and metrics. Integration tests use Go testing and Testcontainers. Docker Compose runs the local services, and GitHub Actions runs CI.
+
+## Security and recovery design
+
+The v1 design limits payloads to 256 KiB, defaults to eight total delivery attempts, uses exponential backoff with jitter, and reclaims expired worker leases. Terminal delivery history is preserved; manual replay creates a new delivery run. Endpoint URLs must use HTTPS, and each outbound connection must recheck DNS and the actual destination IP to block private and metadata addresses. Redirects are disabled. API keys are hashed, signing secrets are encrypted at rest, and ordinary logs exclude raw credentials and payloads.
+
+## Run locally
+
+You need Docker Compose and Go 1.25 or newer. Copy `.env.example` to `.env`, generate a random 32-byte key with `openssl rand -base64 32`, and set `ENCRYPTION_KEY_BASE64` in `.env`. Keep the key for as long as its encrypted endpoint secrets must remain readable.
 
 ```sh
-export DATABASE_URL='postgres://webhooks:webhooks@localhost:5432/webhooks?sslmode=disable'
-scripts/with-local-go go run ./cmd/bootstrap -org 'Example organization'
+cp .env.example .env
+# Set ENCRYPTION_KEY_BASE64 in .env, then:
+docker compose up --build -d
+curl http://localhost:8080/health/ready
 ```
 
-The bootstrap command prints the API key once. Use it to create an endpoint or publish an event:
+Compose binds PostgreSQL to host port 5432 and the API to 8080 by default. If either port is occupied, set `POSTGRES_HOST_PORT` and `API_HOST_PORT` before running Compose. The examples below assume the defaults.
+
+Provision an organization and scoped API key from the host:
 
 ```sh
+export DATABASE_URL='postgres://webhooks:webhooks@127.0.0.1:5432/webhooks?sslmode=disable'
+go run ./cmd/bootstrap -org 'Example organization'
+```
+
+The CLI prints the API key once. Store it securely, then use it to publish an event:
+
+```sh
+export WEBHOOK_API_KEY='paste-the-key-from-bootstrap'
 curl -i http://localhost:8080/v1/events \
-  -H 'Authorization: Bearer YOUR_KEY' \
+  -H "Authorization: Bearer ${WEBHOOK_API_KEY}" \
   -H 'Idempotency-Key: order-123-created' \
   -H 'Content-Type: application/json' \
   -d '{"type":"order.created","data":{"order_id":"ord_123"}}'
 ```
 
-The response is `202` after the event, outbox row, usage count, and idempotency record commit. The same key and body return the same event ID. A different body with the same key returns `409`.
+The response contains a stable event ID and means the event was durably accepted. Repeat the request with the same key and body to get the same ID. The endpoint API accepts only public HTTPS receiver URLs.
 
-## Tests
+## Develop and test
 
 ```sh
-scripts/with-local-go go test ./...
+go test ./...
+go vet ./...
 ```
 
-The integration suite uses Testcontainers and needs Docker. It checks concurrent idempotency, outbox atomicity, one-time endpoint secret exposure, and tenant isolation. API keys and signing secrets are sensitive; do not paste them into issue reports or logs.
+Integration tests start real PostgreSQL with Testcontainers and require Docker access. When changing SQL queries or the schema, install sqlc and run `sqlc generate`; commit the generated code with the query changes. Migrations live in `db/migrations/`.
 
-If the Codex workspace cannot access external networking or Docker sockets, run `./scripts/verify-week1` in a regular terminal. It checks Docker access, downloads Go modules, installs sqlc, generates query code, and runs the tests. Its output is saved to `.tools/week1-verify.log` for review.
+The development Compose credentials in `docker-compose.yml` are for local use. Supply production credentials and encryption keys through deployment secrets management, and keep raw API keys, signing secrets, and event payloads out of ordinary logs.
 
-Run `./scripts/smoke-week1` in a regular terminal to build and start the Compose stack, provision an organization, create an endpoint, publish the same event twice, and verify the single committed outbox row. It cleans up its isolated Compose project and saves output to `.tools/week1-smoke.log`.
+## Repository guide
+
+| Path | Purpose |
+| --- | --- |
+| `cmd/api`, `cmd/bootstrap`, `cmd/migrate` | HTTP API, organization/key provisioning, and schema migration entry points. |
+| `internal/api`, `internal/security`, `internal/config` | Handlers, authorization and cryptography, and environment validation. |
+| `db/migrations`, `db/queries`, `internal/database/sqlc` | PostgreSQL schema, source queries, and generated Go query code. |
+| `tests/integration` | Database-backed behavior and tenant-isolation tests. |
+| `docs/adr` | Accepted architectural decisions. |
+| `PRODUCT.md` | Requirements, v1 API, delivery guarantees, roadmap, and exit gates. |
