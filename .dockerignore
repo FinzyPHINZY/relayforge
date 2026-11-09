@@ -1,0 +1,8 @@
+.tools/
+.git/
+.env
+.github/
+docs/
+scripts/
+go*.tar.gz
+*.log

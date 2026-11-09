@@ -1,0 +1,38 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: webhooks
+      POSTGRES_USER: webhooks
+      POSTGRES_PASSWORD: webhooks
+    ports:
+      - "127.0.0.1:${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webhooks -d webhooks"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+  migrate:
+    build:
+      context: .
+      args: {TARGET: migrate}
+    environment:
+      DATABASE_URL: postgres://webhooks:webhooks@postgres:5432/webhooks?sslmode=disable
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    build:
+      context: .
+      args: {TARGET: api}
+    ports:
+      - "127.0.0.1:${API_HOST_PORT:-8080}:8080"
+    environment:
+      DATABASE_URL: postgres://webhooks:webhooks@postgres:5432/webhooks?sslmode=disable
+      ENCRYPTION_KEY_BASE64: ${ENCRYPTION_KEY_BASE64:?Set ENCRYPTION_KEY_BASE64 in .env}
+      ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:-local-v1}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+volumes:
+  postgres_data:
