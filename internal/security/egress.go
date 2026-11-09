@@ -16,6 +16,10 @@ import (
 // address. Each call creates a fresh transport so no prior connection bypasses
 // DNS revalidation. HTTP is restricted to loopback test fixtures when enabled.
 func PinnedClient(ctx context.Context, raw string, timeout time.Duration, allowHTTPTest bool) (*http.Client, error) {
+	return pinnedClientWithLookup(ctx, raw, timeout, allowHTTPTest, net.DefaultResolver.LookupIPAddr)
+}
+
+func pinnedClientWithLookup(ctx context.Context, raw string, timeout time.Duration, allowHTTPTest bool, lookup func(context.Context, string) ([]net.IPAddr, error)) (*http.Client, error) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.Fragment != "" {
 		return nil, errors.New("invalid destination URL")
@@ -41,7 +45,7 @@ func PinnedClient(ctx context.Context, raw string, timeout time.Duration, allowH
 	} else {
 		lookupCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		answers, lookupErr := net.DefaultResolver.LookupIPAddr(lookupCtx, host)
+		answers, lookupErr := lookup(lookupCtx, host)
 		if lookupErr != nil || len(answers) == 0 {
 			return nil, errors.New("destination DNS unavailable")
 		}

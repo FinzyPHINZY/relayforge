@@ -83,6 +83,7 @@ type EndpointSecret struct {
 	State          string
 	CreatedAt      pgtype.Timestamptz
 	RetiredAt      pgtype.Timestamptz
+	OverlapUntil   pgtype.Timestamptz
 }
 
 type Event struct {
@@ -128,6 +129,14 @@ type Outbox struct {
 	Status         string
 	CreatedAt      pgtype.Timestamptz
 	DispatchedAt   pgtype.Timestamptz
+}
+
+type ReplayRequest struct {
+	OrganizationID   string
+	SourceDeliveryID string
+	IdempotencyKey   string
+	ReplayDeliveryID string
+	CreatedAt        pgtype.Timestamptz
 }
 
 type Subscription struct {

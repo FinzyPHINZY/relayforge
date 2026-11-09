@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
 )
 
 // Complete commits the attempt result and delivery transition together. A
@@ -18,6 +19,8 @@ func Complete(ctx context.Context, pool *pgxpool.Pool, c Claimed, r Result) (boo
 	if r.ErrorCode == "stale_lease" {
 		return false, nil
 	}
+	ctx, span := otel.Tracer("relayforge/worker").Start(ctx, "delivery.complete")
+	defer span.End()
 	status := "exhausted"
 	next := time.Now()
 	if r.Outcome == "success" {
@@ -119,8 +122,10 @@ func (e Engine) workLoop(ctx context.Context, workerID string) {
 			pause(ctx, time.Second)
 			continue
 		}
-		result := e.Sender.Send(ctx, *claim)
-		applied, err := Complete(ctx, e.DB, *claim, result)
+		attemptCtx, span := otel.Tracer("relayforge/worker").Start(ctx, "webhook.attempt")
+		result := e.Sender.Send(attemptCtx, *claim)
+		applied, err := Complete(attemptCtx, e.DB, *claim, result)
+		span.End()
 		if err != nil && ctx.Err() == nil {
 			slog.Error("completion failed", "delivery_id", claim.ID, "error", err)
 		}

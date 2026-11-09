@@ -16,11 +16,15 @@ import (
 
 func main() {
 	name := flag.String("org", "", "organization name")
+	existingOrgID := flag.String("org-id", "", "issue a key for an existing organization")
 	keyName := flag.String("key-name", "bootstrap", "API key name")
-	scopeArg := flag.String("scopes", "events:write,events:read,endpoints:write,endpoints:read", "comma-separated scopes")
+	scopeArg := flag.String("scopes", "events:write,events:read,endpoints:write,endpoints:read,deliveries:read,deliveries:write,metrics:read", "comma-separated scopes")
 	flag.Parse()
-	if strings.TrimSpace(*name) == "" {
-		log.Fatal("-org is required")
+	if (*existingOrgID == "") == (strings.TrimSpace(*name) == "") {
+		log.Fatal("provide exactly one of -org or -org-id")
+	}
+	if *existingOrgID != "" && !id.Valid(*existingOrgID) {
+		log.Fatal("invalid -org-id")
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
@@ -28,9 +32,12 @@ func main() {
 		log.Fatal(err)
 	}
 	defer pool.Close()
-	orgID, err := id.New()
-	if err != nil {
-		log.Fatal(err)
+	orgID := *existingOrgID
+	if orgID == "" {
+		orgID, err = id.New()
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
 	keyID, err := id.New()
 	if err != nil {
@@ -56,9 +63,16 @@ func main() {
 		log.Fatal(err)
 	}
 	defer tx.Rollback(ctx)
-	err = sqlc.New(tx).CreateOrganization(ctx, sqlc.CreateOrganizationParams{ID: orgID, Name: *name})
-	if err != nil {
-		log.Fatal(err)
+	if *existingOrgID == "" {
+		err = sqlc.New(tx).CreateOrganization(ctx, sqlc.CreateOrganizationParams{ID: orgID, Name: *name})
+		if err != nil {
+			log.Fatal(err)
+		}
+	} else {
+		var status string
+		if err = tx.QueryRow(ctx, `SELECT status FROM organizations WHERE id=$1`, orgID).Scan(&status); err != nil || status != "active" {
+			log.Fatal("organization not found or inactive")
+		}
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO api_keys (id,organization_id,name,key_prefix,key_hash,scopes) VALUES ($1,$2,$3,$4,$5,$6)`, keyID, orgID, *keyName, prefix, security.Hash(raw), scopes)
 	if err != nil {

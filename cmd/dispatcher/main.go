@@ -10,9 +10,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"webhook_delivery/internal/delivery"
+	"webhook_delivery/internal/health"
+	"webhook_delivery/internal/observability"
 )
 
 func main() {
+	shutdownTracing := observability.Start("relayforge-dispatcher")
+	defer shutdownTracing(context.Background())
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))
@@ -25,6 +29,8 @@ func main() {
 		slog.Error("database unavailable", "error", err)
 		os.Exit(1)
 	}
+	go health.Serve(ctx, pool, ":8081")
+	go retireExpiredSecrets(ctx, pool)
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 	for ctx.Err() == nil {
@@ -39,6 +45,21 @@ func main() {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+		}
+	}
+}
+
+func retireExpiredSecrets(ctx context.Context, pool *pgxpool.Pool) {
+	ticker := time.NewTicker(time.Minute)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := pool.Exec(ctx, `UPDATE endpoint_secrets SET state='retired',retired_at=overlap_until WHERE state='overlap' AND overlap_until<=now()`); err != nil && ctx.Err() == nil {
+				slog.Error("secret retirement failed", "error", err)
+			}
 		}
 	}
 }

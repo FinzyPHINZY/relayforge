@@ -12,6 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"webhook_delivery/internal/api"
 	"webhook_delivery/internal/config"
+	"webhook_delivery/internal/health"
+	"webhook_delivery/internal/observability"
 )
 
 func main() {
@@ -21,6 +23,8 @@ func main() {
 		os.Exit(1)
 	}
 	ctx := context.Background()
+	shutdownTracing := observability.Start("relayforge-api")
+	defer shutdownTracing(context.Background())
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		slog.Error("database setup failed", "error", err)
@@ -31,6 +35,9 @@ func main() {
 		slog.Error("database unavailable", "error", err)
 		os.Exit(1)
 	}
+	healthCtx, stopHealth := context.WithCancel(ctx)
+	defer stopHealth()
+	go health.Serve(healthCtx, pool, ":8081")
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: (&api.Server{DB: pool, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID}).Router(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 * 1024}
 	go func() {
 		slog.Info("API listening", "addr", cfg.ListenAddr)
