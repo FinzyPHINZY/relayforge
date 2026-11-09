@@ -32,7 +32,7 @@ func Sweep(ctx context.Context, pool *pgxpool.Pool, now, cutoff time.Time, limit
 	stats.IdempotencyRecords = int(tag.RowsAffected())
 	rows, err := tx.Query(ctx, `SELECT e.id FROM events e JOIN outbox o ON o.event_id=e.id
   WHERE e.expires_at<$1 AND e.created_at<$2 AND o.status='dispatched'
-  AND NOT EXISTS(SELECT 1 FROM deliveries d WHERE d.event_id=e.id AND (d.status NOT IN ('succeeded','exhausted','cancelled') OR d.created_at>=$2))
+  AND NOT EXISTS(SELECT 1 FROM deliveries d WHERE d.event_id=e.id AND (d.status NOT IN ('succeeded','exhausted','cancelled') OR d.completed_at IS NULL OR d.completed_at>=$2))
   ORDER BY e.expires_at,e.id FOR UPDATE OF e SKIP LOCKED LIMIT $3`, now, cutoff, limit)
 	if err != nil {
 		return stats, err

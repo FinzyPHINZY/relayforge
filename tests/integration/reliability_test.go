@@ -135,7 +135,7 @@ func TestRetentionKeepsPendingAndRecentReplay(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if _, err := pool.Exec(context.Background(), `UPDATE deliveries SET created_at=$2 WHERE id=$1`, claim.ID, old); err != nil {
+	if _, err := pool.Exec(context.Background(), `UPDATE deliveries SET created_at=$2,completed_at=$2 WHERE id=$1`, claim.ID, old); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := pool.Exec(context.Background(), `INSERT INTO idempotency_records (organization_id,idempotency_key,request_fingerprint,event_id,created_at,expires_at) VALUES ($1,'expired',decode('01','hex'),$2,$3,$4),($1,'young',decode('01','hex'),$2,$5,$6)`, org, pendingEvent, now.Add(-48*time.Hour), now.Add(-25*time.Hour), now.Add(-time.Hour), now.Add(-time.Minute)); err != nil {
@@ -153,7 +153,12 @@ func TestRetentionKeepsPendingAndRecentReplay(t *testing.T) {
 	if applied, e := delivery.Complete(context.Background(), pool, *replayClaim, replayResult); e != nil || !applied {
 		t.Fatalf("replay completion=%v err=%v", applied, e)
 	}
-	if _, err := pool.Exec(context.Background(), `UPDATE deliveries SET created_at=$2 WHERE id=$1`, replayID, old); err != nil {
+	// A recently completed replay must remain available even when it was created long ago.
+	stats, err = retention.Sweep(context.Background(), pool, now, now.Add(-30*24*time.Hour), 100)
+	if err != nil || stats.Events != 0 {
+		t.Fatalf("recently completed replay sweep=%+v err=%v", stats, err)
+	}
+	if _, err := pool.Exec(context.Background(), `UPDATE deliveries SET created_at=$2,completed_at=$2 WHERE id=$1`, replayID, old); err != nil {
 		t.Fatal(err)
 	}
 	stats, err = retention.Sweep(context.Background(), pool, now, now.Add(-30*24*time.Hour), 100)
