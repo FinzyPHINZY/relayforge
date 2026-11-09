@@ -40,7 +40,7 @@ func setup(t *testing.T) (*pgxpool.Pool, *httptest.Server) {
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("PostgreSQL did not accept a connection after readiness: %v", err)
 	}
-	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql"} {
+	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql", "../../db/migrations/000003_recovery.up.sql"} {
 		schema, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -48,6 +48,9 @@ func setup(t *testing.T) (*pgxpool.Pool, *httptest.Server) {
 		if _, err = pool.Exec(ctx, string(schema), pgx.QueryExecModeSimpleProtocol); err != nil {
 			t.Fatal(err)
 		}
+	}
+	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY); INSERT INTO schema_migrations (version) VALUES (1),(2),(3)`, pgx.QueryExecModeSimpleProtocol); err != nil {
+		t.Fatal(err)
 	}
 	server := httptest.NewServer((&api.Server{DB: pool, EncryptionKey: bytes.Repeat([]byte{1}, 32), EncryptionKeyID: "test"}).Router())
 	t.Cleanup(server.Close)
@@ -77,7 +80,7 @@ func tenantKey(t *testing.T, pool *pgxpool.Pool, name string) (string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = pool.Exec(ctx, `INSERT INTO api_keys (id,organization_id,name,key_prefix,key_hash,scopes) VALUES ($1,$2,'test',$3,$4,$5)`, keyID, org, prefix, security.Hash(raw), []string{"events:write", "events:read", "endpoints:write", "endpoints:read"})
+	_, err = pool.Exec(ctx, `INSERT INTO api_keys (id,organization_id,name,key_prefix,key_hash,scopes) VALUES ($1,$2,'test',$3,$4,$5)`, keyID, org, prefix, security.Hash(raw), []string{"events:write", "events:read", "endpoints:write", "endpoints:read", "deliveries:read", "deliveries:write", "metrics:read"})
 	if err != nil {
 		t.Fatal(err)
 	}

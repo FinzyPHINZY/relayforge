@@ -2,6 +2,7 @@ package security
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"testing"
 	"time"
@@ -24,5 +25,27 @@ func TestPinnedClientBlocksPrivateAndRedirectTargets(t *testing.T) {
 	}
 	if err := client.CheckRedirect(request, nil); err != http.ErrUseLastResponse {
 		t.Fatalf("redirect policy: %v", err)
+	}
+}
+
+func TestPinnedClientRevalidatesEveryDNSAnswer(t *testing.T) {
+	ctx := context.Background()
+	lookup := func(_ context.Context, _ string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}}, nil
+	}
+	if _, err := pinnedClientWithLookup(ctx, "https://subscriber.example/", time.Second, false, lookup); err != nil {
+		t.Fatal(err)
+	}
+	lookup = func(_ context.Context, _ string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}, {IP: net.ParseIP("127.0.0.1")}}, nil
+	}
+	if _, err := pinnedClientWithLookup(ctx, "https://subscriber.example/", time.Second, false, lookup); err == nil {
+		t.Fatal("accepted rebinding to private address")
+	}
+	lookup = func(_ context.Context, _ string) ([]net.IPAddr, error) {
+		return []net.IPAddr{{IP: net.ParseIP("::ffff:127.0.0.1")}}, nil
+	}
+	if _, err := pinnedClientWithLookup(ctx, "https://subscriber.example/", time.Second, false, lookup); err == nil {
+		t.Fatal("accepted IPv4-mapped loopback")
 	}
 }

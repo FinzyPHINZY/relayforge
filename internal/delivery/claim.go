@@ -7,6 +7,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
 	"webhook_delivery/internal/id"
 )
 
@@ -37,6 +38,9 @@ func ClaimOne(ctx context.Context, pool *pgxpool.Pool, workerID string, lease ti
 	if err != nil {
 		return nil, err
 	}
+	traceCtx, span := otel.Tracer("relayforge/worker").Start(ctx, "delivery.claim")
+	ctx = traceCtx
+	defer span.End()
 	c.AttemptID, err = id.New()
 	if err != nil {
 		return nil, err

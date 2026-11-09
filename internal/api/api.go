@@ -14,6 +14,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"webhook_delivery/internal/health"
 	"webhook_delivery/internal/security"
 )
 
@@ -44,15 +46,19 @@ func (s *Server) Router() http.Handler {
 		r.With(require("endpoints:read")).Get("/endpoints/{id}", s.getEndpoint)
 		r.With(require("endpoints:write")).Patch("/endpoints/{id}", s.patchEndpoint)
 		r.With(require("endpoints:write")).Delete("/endpoints/{id}", s.deleteEndpoint)
+		r.With(require("endpoints:write")).Post("/endpoints/{id}/rotate-secret", s.rotateEndpointSecret)
+		r.With(require("deliveries:read")).Get("/deliveries", s.listDeliveries)
+		r.With(require("deliveries:read")).Get("/deliveries/{id}", s.getDelivery)
+		r.With(require("deliveries:write")).Post("/deliveries/{id}/replay", s.replayDelivery)
+		r.With(require("metrics:read")).Get("/metrics/summary", s.metricsSummary)
 	})
-	return r
+	return otelhttp.NewHandler(r, "http.server")
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
 	defer cancel()
-	var version int
-	if err := s.DB.QueryRow(ctx, `SELECT version FROM schema_migrations WHERE version = 1`).Scan(&version); err != nil {
+	if !health.Ready(ctx, s.DB) {
 		problem(w, 503, "storage_unavailable", "Database is not ready")
 		return
 	}

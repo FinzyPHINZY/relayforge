@@ -12,10 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"webhook_delivery/internal/config"
 	"webhook_delivery/internal/delivery"
+	"webhook_delivery/internal/health"
 	"webhook_delivery/internal/id"
+	"webhook_delivery/internal/observability"
 )
 
 func main() {
+	shutdownTracing := observability.Start("relayforge-worker")
+	defer shutdownTracing(context.Background())
 	cfg, err := config.Load()
 	if err != nil {
 		slog.Error("configuration failed", "error", err)
@@ -33,6 +37,7 @@ func main() {
 		slog.Error("database unavailable", "error", err)
 		os.Exit(1)
 	}
+	go health.Serve(ctx, pool, ":8081")
 	workerID, err := id.New()
 	if err != nil {
 		slog.Error("ID generation failed", "error", err)

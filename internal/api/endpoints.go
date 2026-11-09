@@ -27,16 +27,25 @@ type endpointPatch struct {
 	MaxAttempts *int      `json:"max_attempts"`
 }
 type endpointView struct {
-	ID              string    `json:"id"`
-	SigningSecretID string    `json:"signing_secret_id"`
-	URL             string    `json:"url"`
-	Description     string    `json:"description"`
-	Status          string    `json:"status"`
-	EventTypes      []string  `json:"event_types"`
-	TimeoutMS       int       `json:"timeout_ms"`
-	MaxAttempts     int       `json:"max_attempts"`
-	CreatedAt       time.Time `json:"created_at"`
-	UpdatedAt       time.Time `json:"updated_at"`
+	ID              string           `json:"id"`
+	SigningSecretID string           `json:"signing_secret_id"`
+	SigningSecrets  []secretMetadata `json:"signing_secrets"`
+	URL             string           `json:"url"`
+	Description     string           `json:"description"`
+	Status          string           `json:"status"`
+	EventTypes      []string         `json:"event_types"`
+	TimeoutMS       int              `json:"timeout_ms"`
+	MaxAttempts     int              `json:"max_attempts"`
+	CreatedAt       time.Time        `json:"created_at"`
+	UpdatedAt       time.Time        `json:"updated_at"`
+}
+
+type secretMetadata struct {
+	ID           string     `json:"id"`
+	State        string     `json:"state"`
+	CreatedAt    time.Time  `json:"created_at"`
+	OverlapUntil *time.Time `json:"overlap_until,omitempty"`
+	RetiredAt    *time.Time `json:"retired_at,omitempty"`
 }
 
 func validEventTypes(types []string) bool {
@@ -125,7 +134,8 @@ func (s *Server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO endpoint_secrets (id,organization_id,endpoint_id,ciphertext,nonce,key_id) VALUES ($1,$2,$3,$4,$5,$6)`, secretID, orgID, endpointID, ciphertext, nonce, s.EncryptionKeyID)
+	var secretCreated time.Time
+	err = tx.QueryRow(ctx, `INSERT INTO endpoint_secrets (id,organization_id,endpoint_id,ciphertext,nonce,key_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING created_at`, secretID, orgID, endpointID, ciphertext, nonce, s.EncryptionKeyID).Scan(&secretCreated)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
@@ -142,6 +152,7 @@ func (s *Server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	view.EventTypes = in.EventTypes
 	view.SigningSecretID = secretID
+	view.SigningSecrets = []secretMetadata{{ID: secretID, State: "active", CreatedAt: secretCreated}}
 	writeJSON(w, 201, map[string]any{"endpoint": view, "signing_secret": secret, "signing_secret_id": secretID})
 }
 
@@ -181,7 +192,24 @@ func (s *Server) loadEndpoint(r *http.Request, endpointID string) (endpointView,
 		}
 		v.EventTypes = append(v.EventTypes, typ)
 	}
-	return v, rows.Err()
+	if err = rows.Err(); err != nil {
+		return v, err
+	}
+	rows.Close()
+	secrets, err := s.DB.Query(r.Context(), `SELECT id,state,created_at,overlap_until,retired_at FROM endpoint_secrets WHERE endpoint_id=$1 AND organization_id=$2 ORDER BY created_at DESC,id DESC`, endpointID, tenant(r))
+	if err != nil {
+		return v, err
+	}
+	defer secrets.Close()
+	v.SigningSecrets = make([]secretMetadata, 0)
+	for secrets.Next() {
+		var m secretMetadata
+		if err = secrets.Scan(&m.ID, &m.State, &m.CreatedAt, &m.OverlapUntil, &m.RetiredAt); err != nil {
+			return v, err
+		}
+		v.SigningSecrets = append(v.SigningSecrets, m)
+	}
+	return v, secrets.Err()
 }
 
 func (s *Server) listEndpoints(w http.ResponseWriter, r *http.Request) {

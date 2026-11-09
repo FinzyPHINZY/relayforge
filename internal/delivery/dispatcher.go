@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.opentelemetry.io/otel"
 )
 
 type outboxItem struct{ id, organizationID, eventID, eventType string }
@@ -38,6 +39,11 @@ func DispatchBatch(ctx context.Context, pool *pgxpool.Pool, limit int) (int, err
 		return 0, err
 	}
 	rows.Close()
+	if len(items) > 0 {
+		traceCtx, span := otel.Tracer("relayforge/dispatcher").Start(ctx, "outbox.dispatch")
+		ctx = traceCtx
+		defer span.End()
+	}
 	for _, item := range items {
 		_, err = tx.Exec(ctx, `INSERT INTO deliveries (id,organization_id,event_id,endpoint_id,destination_url,timeout_ms,max_attempts) SELECT gen_random_uuid(),e.organization_id,$2,e.id,e.url,e.timeout_ms,e.max_attempts FROM endpoints e WHERE e.organization_id=$1 AND e.status='active' AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.endpoint_id=e.id AND s.organization_id=e.organization_id AND s.event_type IN ($3,'*')) ON CONFLICT (event_id,endpoint_id,run_number) DO NOTHING`, item.organizationID, item.eventID, item.eventType)
 		if err != nil {
