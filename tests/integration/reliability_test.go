@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"webhook_delivery/internal/delivery"
 	"webhook_delivery/internal/retention"
 )
@@ -80,10 +81,20 @@ func TestDatabaseRestartPreservesAcceptedBacklog(t *testing.T) {
 	if err := container.Start(context.Background()); err != nil {
 		t.Fatal(err)
 	}
+	// Docker may assign a new published port when the container starts again.
+	url, err := container.ConnectionString(context.Background(), "sslmode=disable")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recoveredPool, err := pgxpool.New(context.Background(), url)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer recoveredPool.Close()
 	deadline := time.Now().Add(20 * time.Second)
 	for {
 		pingCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-		err = pool.Ping(pingCtx)
+		err = recoveredPool.Ping(pingCtx)
 		cancel()
 		if err == nil {
 			break
@@ -93,12 +104,12 @@ func TestDatabaseRestartPreservesAcceptedBacklog(t *testing.T) {
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	claim := dispatchAndClaim(t, pool, "restart-worker")
+	claim := dispatchAndClaim(t, recoveredPool, "restart-worker")
 	if claim.EventID != eventID {
 		t.Fatalf("event=%s want=%s", claim.EventID, eventID)
 	}
-	result := testSender(pool).Send(context.Background(), *claim)
-	if applied, err := delivery.Complete(context.Background(), pool, *claim, result); err != nil || !applied || result.Outcome != "success" {
+	result := testSender(recoveredPool).Send(context.Background(), *claim)
+	if applied, err := delivery.Complete(context.Background(), recoveredPool, *claim, result); err != nil || !applied || result.Outcome != "success" {
 		t.Fatalf("completion=%v result=%+v err=%v", applied, result, err)
 	}
 }
