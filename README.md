@@ -2,7 +2,7 @@
 
 RelayForge is a multi-tenant service for accepting events and delivering signed HTTP webhooks to subscribed endpoints. It stores accepted events in PostgreSQL, creates endpoint-specific deliveries through an outbox dispatcher, and records each delivery attempt so operators can investigate failures and replay exhausted deliveries.
 
-The product specification defines the API, security requirements, delivery state machine, failure cases, and acceptance gates. The quickstart below exercises the ingestion API. It does not send a webhook; the dispatcher and worker are separate components in the product architecture.
+The quickstart below exercises the ingestion API. It does not send a webhook; the dispatcher and worker are separate components in the platform architecture.
 
 ## Delivery contract
 
@@ -92,5 +92,3 @@ The development Compose credentials in `docker-compose.yml` are for local use. S
 | `internal/api`, `internal/security`, `internal/config` | Handlers, authorization and cryptography, and environment validation. |
 | `db/migrations`, `db/queries`, `internal/database/sqlc` | PostgreSQL schema, source queries, and generated Go query code. |
 | `tests/integration` | Database-backed behavior and tenant-isolation tests. |
-| `docs/adr` | Accepted architectural decisions. |
-| `PRODUCT.md` | Requirements, v1 API, delivery guarantees, roadmap, and exit gates. |
