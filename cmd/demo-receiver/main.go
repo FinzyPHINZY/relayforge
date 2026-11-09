@@ -25,6 +25,7 @@ type fixture struct {
 	mu       sync.Mutex
 	secret   string
 	failures int
+	delay    time.Duration
 	receipts []receipt
 	seen     map[string]bool
 }
@@ -42,17 +43,19 @@ func (f *fixture) configure(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Secret   string `json:"secret"`
 		Failures int    `json:"failures"`
+		DelayMS  int    `json:"delay_ms"`
 	}
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	d := json.NewDecoder(r.Body)
 	d.DisallowUnknownFields()
-	if err := d.Decode(&input); err != nil || input.Secret == "" || len(input.Secret) > 256 || input.Failures < 0 || input.Failures > 8 {
+	if err := d.Decode(&input); err != nil || input.Secret == "" || len(input.Secret) > 256 || input.Failures < 0 || input.Failures > 8 || input.DelayMS < 0 || input.DelayMS > 30000 {
 		http.Error(w, "invalid fixture configuration", 400)
 		return
 	}
 	f.mu.Lock()
 	f.secret = input.Secret
 	f.failures = input.Failures
+	f.delay = time.Duration(input.DelayMS) * time.Millisecond
 	f.receipts = nil
 	f.seen = make(map[string]bool)
 	f.mu.Unlock()
@@ -94,6 +97,10 @@ func (f *fixture) receive(w http.ResponseWriter, r *http.Request) {
 	if len(f.receipts) > 100 {
 		f.receipts = f.receipts[len(f.receipts)-100:]
 	}
+	delay := f.delay
 	f.mu.Unlock()
+	if delay > 0 {
+		time.Sleep(delay)
+	}
 	w.WriteHeader(status)
 }

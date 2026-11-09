@@ -2,7 +2,7 @@
 
 RelayForge is a multi-tenant service for accepting events and delivering signed HTTP webhooks to subscribed endpoints. It stores accepted events in PostgreSQL, creates endpoint-specific deliveries through an outbox dispatcher, and records each delivery attempt so operators can investigate failures and replay exhausted deliveries.
 
-The quickstart below exercises the ingestion API. It does not send a webhook; the dispatcher and worker are separate components in the platform architecture.
+The quickstart below accepts an event and sends a signed webhook to an optional local receiver.
 
 ## Delivery contract
 
@@ -16,7 +16,7 @@ The quickstart below exercises the ingestion API. It does not send a webhook; th
 | Receiver deduplication | A stable `webhook-id` identifies a delivery run across retries. Receivers should deduplicate with it. |
 | Tenant isolation | API keys belong to one organization; resource queries are constrained by organization ID. |
 
-The planned webhook request includes `webhook-id`, `webhook-timestamp`, `webhook-attempt`, and `webhook-signature` headers. The signature is `v1,<base64(HMAC-SHA256(secret, timestamp + "." + raw_body_bytes))>`. Receivers should compare signatures in constant time, check timestamp freshness, and deduplicate by `webhook-id`.
+Webhook requests include `webhook-id`, `webhook-timestamp`, `webhook-attempt`, and `webhook-signature` headers. The signature is `v1,<base64(HMAC-SHA256(secret, timestamp + "." + raw_body_bytes))>`. Receivers should compare signatures in constant time, check timestamp freshness, and deduplicate by `webhook-id`.
 
 ## Architecture
 
@@ -42,12 +42,12 @@ The v1 design limits payloads to 256 KiB, defaults to eight total delivery attem
 
 ## Run locally
 
-You need Docker Compose and Go 1.25 or newer. Copy `.env.example` to `.env`, generate a random 32-byte key with `openssl rand -base64 32`, and set `ENCRYPTION_KEY_BASE64` in `.env`. Keep the key for as long as its encrypted endpoint secrets must remain readable.
+You need Docker Compose, Go 1.25 or newer, and `jq` for the demo commands. Copy `.env.example` to `.env`, generate a random 32-byte key with `openssl rand -base64 32`, and set `ENCRYPTION_KEY_BASE64` in `.env`. Keep the key for as long as its encrypted endpoint secrets must remain readable.
 
 ```sh
 cp .env.example .env
-# Set ENCRYPTION_KEY_BASE64 in .env, then:
-docker compose up --build -d
+# Set ENCRYPTION_KEY_BASE64 and DEMO_RECEIVER_ORIGIN=http://receiver:8090 in .env, then:
+docker compose --profile demo up --build -d
 curl http://localhost:8080/health/ready
 ```
 
@@ -71,7 +71,26 @@ curl -i http://localhost:8080/v1/events \
   -d '{"type":"order.created","data":{"order_id":"ord_123"}}'
 ```
 
-The response contains a stable event ID and means the event was durably accepted. Repeat the request with the same key and body to get the same ID. The endpoint API accepts only public HTTPS receiver URLs.
+The response contains a stable event ID and means the event was durably accepted. Repeat the request with the same key and body to get the same ID.
+
+### Deliver to the local receiver
+
+The demo profile starts a receiver at `127.0.0.1:8090`. It records signature checks and duplicate IDs without exposing payloads. The HTTP exception accepts only the configured `receiver:8090` Docker service and is disabled when `DEMO_RECEIVER_ORIGIN` is empty. Normal endpoints require public HTTPS.
+
+```sh
+ENDPOINT_JSON=$(curl -fsS -X POST http://localhost:8080/v1/endpoints -H "Authorization: Bearer ${WEBHOOK_API_KEY}" -H 'Content-Type: application/json' -d '{"url":"http://receiver:8090/webhooks","event_types":["order.created"],"max_attempts":3}')
+ENDPOINT_ID=$(printf '%s' "$ENDPOINT_JSON" | jq -r '.endpoint.id')
+SIGNING_SECRET=$(printf '%s' "$ENDPOINT_JSON" | jq -r '.signing_secret')
+curl -fsS -X POST http://localhost:8090/admin/config -H 'Content-Type: application/json' -d "$(jq -nc --arg secret "$SIGNING_SECRET" '{secret:$secret,failures:2}')"
+EVENT_JSON=$(curl -fsS -X POST http://localhost:8080/v1/events -H "Authorization: Bearer ${WEBHOOK_API_KEY}" -H 'Content-Type: application/json' -H "Idempotency-Key: demo-$(date +%s)" -d '{"type":"order.created","data":{"order_id":"demo-1"}}')
+EVENT_ID=$(printf '%s' "$EVENT_JSON" | jq -r '.id')
+curl -fsS http://localhost:8090/admin/receipts | jq
+curl -fsS "http://localhost:8080/v1/deliveries?event_id=${EVENT_ID}" -H "Authorization: Bearer ${WEBHOOK_API_KEY}" | jq
+```
+
+The receiver returns 503 twice, then 204. Retry backoff begins at 30 seconds; check receipts again after about two minutes. Each receipt shows `valid_signature: true` and the same `webhook_id` across attempts. Use `GET /v1/deliveries/{id}` to inspect attempt history. To demonstrate crash recovery, configure the receiver with `delay_ms: 10000`, publish another event, kill the worker after the first receipt appears, restart it, and observe a duplicate ID after lease expiry. Receivers must deduplicate that ID.
+
+For an exhausted delivery, set the endpoint's `max_attempts` to 1 for a new event, configure one receiver failure, then call `POST /v1/deliveries/{id}/replay` with an `Idempotency-Key`. Replay creates a linked run and preserves the original attempt history.
 
 ## Develop and test
 

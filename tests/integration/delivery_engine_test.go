@@ -20,7 +20,7 @@ import (
 
 var testEncryptionKey = bytes.Repeat([]byte{1}, 32)
 
-func addDeliveryEndpoint(t *testing.T, pool *pgxpool.Pool, org, url string) (string, string) {
+func addDeliveryEndpoint(t testing.TB, pool *pgxpool.Pool, org, url string) (string, string) {
 	t.Helper()
 	ctx := context.Background()
 	endpointID, err := id.New()
