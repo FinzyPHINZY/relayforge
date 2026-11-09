@@ -1,0 +1,9 @@
+DROP TABLE monthly_event_usage;
+DROP TABLE idempotency_records;
+DROP TABLE outbox;
+DROP TABLE events;
+DROP TABLE subscriptions;
+DROP TABLE endpoint_secrets;
+DROP TABLE endpoints;
+DROP TABLE api_keys;
+DROP TABLE organizations;

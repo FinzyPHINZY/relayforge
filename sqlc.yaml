@@ -1,0 +1,14 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "db/queries"
+    schema: "db/migrations/000001_foundation.up.sql"
+    gen:
+      go:
+        package: "sqlc"
+        out: "internal/database/sqlc"
+        sql_package: "pgx/v5"
+        emit_interface: true
+        overrides:
+          - db_type: "uuid"
+            go_type: "string"

@@ -1,0 +1,10 @@
+.env
+.DS_Store
+coverage.out
+bin/
+.tools/
+docs/
+scripts/
+go*.tar.gz
+web/dashboard/.next/
+web/dashboard/node_modules/
