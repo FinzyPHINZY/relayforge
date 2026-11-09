@@ -3,6 +3,9 @@ on: [push, pull_request, workflow_dispatch]
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      ENCRYPTION_KEY_BASE64: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
+      DEMO_RECEIVER_ORIGIN: http://receiver:8090
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
@@ -14,4 +17,24 @@ jobs:
       - run: go test ./...
       - name: Benchmark ingestion and delivery
         if: github.event_name == 'workflow_dispatch' || github.ref_name == 'feat/reliability-and-demo'
-        run: go test ./tests/integration -run '^$' -bench 'Benchmark(EventIngestion|PublishToAcknowledgedDelivery)$' -benchtime=3s -count=1 -v
+        run: go test ./tests/integration -run '^$' -bench 'Benchmark(EventIngestion|PublishToAcknowledgedDelivery)$' -benchtime=500x -count=1 -v
+      - name: Verify Compose demo delivery
+        run: |
+          docker compose --profile demo up --build -d
+          curl --retry 30 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8080/health/ready
+          curl --retry 30 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8090/health/live
+          bootstrap_output=$(DATABASE_URL='postgres://webhooks:webhooks@127.0.0.1:5432/webhooks?sslmode=disable' go run ./cmd/bootstrap -org 'CI demo')
+          key=$(printf '%s' "$bootstrap_output" | awk '/API key/{print $NF}')
+          endpoint=$(curl -fsS -X POST http://127.0.0.1:8080/v1/endpoints -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"url":"http://receiver:8090/webhooks","event_types":["order.created"]}')
+          secret=$(printf '%s' "$endpoint" | python3 -c 'import json,sys; print(json.load(sys.stdin)["signing_secret"])')
+          config_body=$(printf '%s' "$secret" | python3 -c 'import json,sys; print(json.dumps({"secret":sys.stdin.read(),"failures":0}))')
+          curl -fsS -X POST http://127.0.0.1:8090/admin/config -H 'Content-Type: application/json' -d "$config_body"
+          curl -fsS -X POST http://127.0.0.1:8080/v1/events -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"type":"order.created","data":{"order_id":"ci-demo"}}'
+          for i in {1..20}; do
+            if curl -fsS http://127.0.0.1:8090/admin/receipts | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]; sys.exit(0 if r and r[0]["valid_signature"] and r[0]["http_status"]==204 else 1)'; then exit 0; fi
+            sleep 1
+          done
+          exit 1
+      - name: Stop Compose demo
+        if: always()
+        run: docker compose --profile demo down -v

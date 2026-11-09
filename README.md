@@ -34,11 +34,13 @@ Publisher → Go/Chi API → PostgreSQL event + outbox → 202 Accepted
 
 PostgreSQL is the source of truth for accepted events, outbox records, delivery state, leases, and attempts. The custom Go worker engine uses bounded requests and database leases with fencing generations. Redis, accessed through go-redis, is reserved for P1 distributed throttling; it is never the durable delivery queue. The P1 dashboard uses Next.js, TypeScript, Tailwind CSS, and shadcn/ui.
 
-The backend uses Go, Chi, pgx, and sqlc, with OpenTelemetry for tracing and metrics. Integration tests use Go testing and Testcontainers. Docker Compose runs the local services, and GitHub Actions runs CI.
+The backend uses Go, Chi, pgx, and sqlc, with OpenTelemetry trace spans and database-backed metrics. Integration tests use Go testing and Testcontainers. Docker Compose runs the local services, and GitHub Actions runs CI.
 
 ## Security and recovery design
 
 The v1 design limits payloads to 256 KiB, defaults to eight total delivery attempts, uses exponential backoff with jitter, and reclaims expired worker leases. Terminal delivery history is preserved; manual replay creates a new delivery run. Endpoint URLs must use HTTPS, and each outbound connection must recheck DNS and the actual destination IP to block private and metadata addresses. Redirects are disabled. API keys are hashed, signing secrets are encrypted at rest, and ordinary logs exclude raw credentials and payloads.
+
+Event ingestion and management requests have separate per-key rate limits. These limits are local to each API instance; monthly event and endpoint quotas are enforced in PostgreSQL. The dispatcher deletes expired idempotency records after at least 24 hours and removes events only when their outbox is dispatched and every delivery is terminal and past the configured retention window (30 days by default). The worker stops claiming on shutdown and allows in-flight attempts up to `WORKER_DRAIN_SECONDS` to complete.
 
 ## Run locally
 
@@ -101,6 +103,8 @@ go vet ./...
 
 Integration tests start real PostgreSQL with Testcontainers and require Docker access. When changing SQL queries or the schema, install sqlc and run `sqlc generate`; commit the generated code with the query changes. Migrations live in `db/migrations/`.
 
+To reproduce the benchmark on a Docker-capable machine, run `go test ./tests/integration -run '^$' -bench 'Benchmark(EventIngestion|PublishToAcknowledgedDelivery)$' -benchtime=500x -count=1 -v`. It reports throughput and p50/p95/p99 latency. The delivery benchmark includes event acceptance, outbox dispatch, HTTP send, and attempt persistence.
+
 The development Compose credentials in `docker-compose.yml` are for local use. Supply production credentials and encryption keys through deployment secrets management, and keep raw API keys, signing secrets, and event payloads out of ordinary logs.
 
 ## Repository guide
@@ -108,6 +112,7 @@ The development Compose credentials in `docker-compose.yml` are for local use. S
 | Path | Purpose |
 | --- | --- |
 | `cmd/api`, `cmd/bootstrap`, `cmd/migrate` | HTTP API, organization/key provisioning, and schema migration entry points. |
+| `cmd/dispatcher`, `cmd/worker`, `cmd/demo-receiver` | Outbox materialization, HTTP delivery, and optional local receiver. |
 | `internal/api`, `internal/security`, `internal/config` | Handlers, authorization and cryptography, and environment validation. |
 | `db/migrations`, `db/queries`, `internal/database/sqlc` | PostgreSQL schema, source queries, and generated Go query code. |
 | `tests/integration` | Database-backed behavior and tenant-isolation tests. |
