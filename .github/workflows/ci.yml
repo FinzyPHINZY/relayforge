@@ -18,7 +18,11 @@ jobs:
         run: |
           git diff -- go.mod go.sum > /tmp/relayforge-mod-diff
           if test -s /tmp/relayforge-mod-diff; then
-            echo "::notice title=Module metadata::$(base64 -w0 /tmp/relayforge-mod-diff)"
+            part=0
+            while IFS= read -r chunk; do
+              part=$((part + 1))
+              echo "::notice title=Module metadata part $part::$chunk"
+            done < <(base64 -w0 /tmp/relayforge-mod-diff | fold -w 2500)
           fi
       - run: go vet ./...
       - run: go test ./...
