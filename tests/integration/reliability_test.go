@@ -111,6 +111,36 @@ func TestDispatchFailureRollsBackMaterializedDeliveries(t *testing.T) {
 	}
 }
 
+func TestSlowReceiverTimesOutWithoutBlockingRecovery(t *testing.T) {
+	pool, apiServer := setup(t)
+	org, key := tenantKey(t, pool, "slow receiver")
+	receiver := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		time.Sleep(1500 * time.Millisecond)
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer receiver.Close()
+	endpointID, _ := addDeliveryEndpoint(t, pool, org, receiver.URL)
+	if _, err := pool.Exec(context.Background(), `UPDATE endpoints SET timeout_ms=1000 WHERE id=$1`, endpointID); err != nil {
+		t.Fatal(err)
+	}
+	publishDeliveryEvent(t, apiServer, key)
+	claim := dispatchAndClaim(t, pool, "timeout-worker")
+	if claim.Timeout != time.Second {
+		t.Fatalf("attempt timeout=%s", claim.Timeout)
+	}
+	result := testSender(pool).Send(context.Background(), *claim)
+	if result.Outcome != "timeout" || !result.Retryable {
+		t.Fatalf("slow receiver classification=%+v", result)
+	}
+	if applied, err := delivery.Complete(context.Background(), pool, *claim, result); err != nil || !applied {
+		t.Fatalf("timeout completion=%v err=%v", applied, err)
+	}
+	var status string
+	if err := pool.QueryRow(context.Background(), `SELECT status FROM deliveries WHERE id=$1`, claim.ID).Scan(&status); err != nil || status != "retry_wait" {
+		t.Fatalf("timeout delivery status=%s err=%v", status, err)
+	}
+}
+
 func TestWorkerShutdownDrainsClaimedAttempt(t *testing.T) {
 	pool, apiServer := setup(t)
 	org, key := tenantKey(t, pool, "drain")

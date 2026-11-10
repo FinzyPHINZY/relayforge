@@ -103,7 +103,7 @@ go vet ./...
 
 Integration tests start real PostgreSQL with Testcontainers and require Docker access. When changing SQL queries or the schema, install sqlc and run `sqlc generate`; commit the generated code with the query changes. Migrations live in `db/migrations/`.
 
-For a focused failure demonstration, run `go test ./tests/integration -run 'Test(CommittedEventSurvivesLostHTTPResponse|DispatchFailureRollsBackMaterializedDeliveries|DatabaseRestartPreservesAcceptedBacklog)$' -count=1 -v`. It checks a lost acceptance response, atomic dispatch rollback, and recovery after PostgreSQL restarts.
+For a focused failure demonstration, run `go test ./tests/integration -run 'Test(CommittedEventSurvivesLostHTTPResponse|DispatchFailureRollsBackMaterializedDeliveries|DatabaseRestartPreservesAcceptedBacklog|SlowReceiverTimesOutWithoutBlockingRecovery)$' -count=1 -v`. It checks a lost acceptance response, atomic dispatch rollback, recovery after PostgreSQL restarts, and a bounded timeout for a slow receiver.
 
 To reproduce the benchmark on a Docker-capable machine, run `go test ./tests/integration -run '^$' -bench 'Benchmark(EventIngestion|PublishToAcknowledgedDelivery)$' -benchtime=500x -count=1 -v`. It reports throughput, allocations, and p50/p95/p99 latency. The delivery benchmark includes event acceptance, outbox dispatch, HTTP send, and attempt persistence. Each CI run publishes its measured output as a `benchmark-results` artifact and job summary, including the runner CPU and Go version. These short fixed-iteration measurements are a baseline, not a sustained-load result or a latency SLO.
 
