@@ -52,8 +52,10 @@ jobs:
           grep -q 'Sign in to your workspace' /tmp/relayforge-dashboard-login.html
       - name: Verify dashboard sign in
         run: |
-          bootstrap_output=$(DATABASE_URL='postgres://webhooks:webhooks@127.0.0.1:5432/webhooks?sslmode=disable' go run ./cmd/bootstrap -org 'CI dashboard')
+          bootstrap_output=$(DATABASE_URL='postgres://webhooks:webhooks@127.0.0.1:5432/webhooks?sslmode=disable' go run ./cmd/bootstrap -org 'CI dashboard and demo')
           key=$(printf '%s' "$bootstrap_output" | awk '/API key/{print $NF}')
+          umask 077
+          printf '%s' "$key" > /tmp/relayforge-ci-api-key
           action_field=$(grep -oE '\$ACTION_ID_[A-Za-z0-9_]+' /tmp/relayforge-dashboard-login.html | sed -n '1p')
           test -n "$action_field"
           curl --retry 10 --retry-all-errors --retry-delay 1 -fsS -c /tmp/relayforge-dashboard-cookies.txt -o /tmp/relayforge-dashboard-auth.html -F "$action_field=" -F "apiKey=$key" -H 'Origin: http://127.0.0.1:3000' http://127.0.0.1:3000/login
@@ -61,18 +63,26 @@ jobs:
           grep -q 'Delivery at a glance' /tmp/relayforge-dashboard-overview.html
       - name: Verify signed demo delivery
         run: |
-          bootstrap_output=$(DATABASE_URL='postgres://webhooks:webhooks@127.0.0.1:5432/webhooks?sslmode=disable' go run ./cmd/bootstrap -org 'CI demo')
-          key=$(printf '%s' "$bootstrap_output" | awk '/API key/{print $NF}')
+          key=$(cat /tmp/relayforge-ci-api-key)
           endpoint=$(curl -fsS -X POST http://127.0.0.1:8080/v1/endpoints -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"url":"http://receiver:8090/webhooks","event_types":["order.created"]}')
           secret=$(printf '%s' "$endpoint" | python3 -c 'import json,sys; print(json.load(sys.stdin)["signing_secret"])')
           config_body=$(printf '%s' "$secret" | python3 -c 'import json,sys; print(json.dumps({"secret":sys.stdin.read(),"failures":0}))')
           curl -fsS -X POST http://127.0.0.1:8090/admin/config -H 'Content-Type: application/json' -d "$config_body"
-          curl -fsS -X POST http://127.0.0.1:8080/v1/events -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"type":"order.created","data":{"order_id":"ci-demo"}}'
+          event=$(curl -fsS -X POST http://127.0.0.1:8080/v1/events -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"type":"order.created","data":{"order_id":"ci-demo"}}')
+          event_id=$(printf '%s' "$event" | python3 -c 'import json,sys; print(json.load(sys.stdin)["id"])')
+          delivered=0
           for i in {1..20}; do
-            if curl -fsS http://127.0.0.1:8090/admin/receipts | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]; sys.exit(0 if r and r[0]["valid_signature"] and r[0]["http_status"]==204 else 1)'; then exit 0; fi
+            if curl -fsS http://127.0.0.1:8090/admin/receipts | python3 -c 'import json,sys; r=json.load(sys.stdin)["data"]; sys.exit(0 if r and r[0]["valid_signature"] and r[0]["http_status"]==204 else 1)'; then delivered=1; break; fi
             sleep 1
           done
-          exit 1
+          test "$delivered" = 1
+          delivery=$(curl -fsS "http://127.0.0.1:8080/v1/deliveries?event_id=$event_id" -H "Authorization: Bearer $key")
+          delivery_id=$(printf '%s' "$delivery" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')
+          for route in endpoints events deliveries "events/$event_id" "deliveries/$delivery_id"; do
+            status=$(curl -sS -b /tmp/relayforge-dashboard-cookies.txt -o /tmp/relayforge-dashboard-page.html -w '%{http_code}' "http://127.0.0.1:3000/$route")
+            test "$status" = 200
+            if grep -q 'Could not load this view' /tmp/relayforge-dashboard-page.html; then exit 1; fi
+          done
       - name: Stop Compose demo
         if: always()
         run: docker compose --profile demo --profile dashboard down -v
