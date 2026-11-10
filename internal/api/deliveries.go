@@ -28,13 +28,14 @@ type deliveryView struct {
 	CreatedAt              time.Time  `json:"created_at"`
 	UpdatedAt              time.Time  `json:"updated_at"`
 	CompletedAt            *time.Time `json:"completed_at,omitempty"`
+	ReviewStatus           *string    `json:"review_status,omitempty"`
 }
 
-const deliveryColumns = `id,event_id,endpoint_id,run_number,replayed_from_delivery_id,destination_url,status,attempt_count,max_attempts,next_attempt_at,last_http_status,last_error_code,created_at,updated_at,completed_at`
+const deliveryColumns = `d.id,d.event_id,d.endpoint_id,d.run_number,d.replayed_from_delivery_id,d.destination_url,d.status,d.attempt_count,d.max_attempts,d.next_attempt_at,d.last_http_status,d.last_error_code,d.created_at,d.updated_at,d.completed_at,CASE WHEN d.status='exhausted' THEN COALESCE(dr.status,'unreviewed') END`
 
 func scanDelivery(row pgx.Row) (deliveryView, error) {
 	var d deliveryView
-	err := row.Scan(&d.ID, &d.EventID, &d.EndpointID, &d.RunNumber, &d.ReplayedFromDeliveryID, &d.DestinationURL, &d.Status, &d.AttemptCount, &d.MaxAttempts, &d.NextAttemptAt, &d.LastHTTPStatus, &d.LastErrorCode, &d.CreatedAt, &d.UpdatedAt, &d.CompletedAt)
+	err := row.Scan(&d.ID, &d.EventID, &d.EndpointID, &d.RunNumber, &d.ReplayedFromDeliveryID, &d.DestinationURL, &d.Status, &d.AttemptCount, &d.MaxAttempts, &d.NextAttemptAt, &d.LastHTTPStatus, &d.LastErrorCode, &d.CreatedAt, &d.UpdatedAt, &d.CompletedAt, &d.ReviewStatus)
 	return d, err
 }
 
@@ -45,7 +46,7 @@ func (s *Server) listDeliveries(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	q := r.URL.Query()
-	var eventID, endpointID, status any
+	var eventID, endpointID, status, reviewStatus any
 	if raw := q.Get("event_id"); raw != "" {
 		if !id.Valid(raw) {
 			problem(w, 400, "invalid_filter", "Invalid event ID")
@@ -66,6 +67,20 @@ func (s *Server) listDeliveries(w http.ResponseWriter, r *http.Request) {
 			status = raw
 		default:
 			problem(w, 400, "invalid_filter", "Invalid delivery status")
+			return
+		}
+	}
+	if raw := q.Get("review_status"); raw != "" {
+		if requested := q.Get("status"); requested != "" && requested != "exhausted" {
+			problem(w, 400, "invalid_filter", "Review status requires exhausted deliveries")
+			return
+		}
+		switch raw {
+		case "unreviewed", "investigating", "resolved":
+			reviewStatus = raw
+			status = "exhausted"
+		default:
+			problem(w, 400, "invalid_filter", "Invalid review status")
 			return
 		}
 	}
@@ -95,7 +110,7 @@ func (s *Server) listDeliveries(w http.ResponseWriter, r *http.Request) {
 		cursorTime = cursor.Time
 		cursorID = cursor.ID
 	}
-	rows, err := s.DB.Query(r.Context(), `SELECT `+deliveryColumns+` FROM deliveries WHERE organization_id=$1 AND ($2::uuid IS NULL OR event_id=$2) AND ($3::uuid IS NULL OR endpoint_id=$3) AND ($4::text IS NULL OR status=$4) AND ($5::timestamptz IS NULL OR created_at >= $5) AND ($6::timestamptz IS NULL OR created_at < $6) AND ($7::timestamptz IS NULL OR (created_at,id)<($7,$8::uuid)) ORDER BY created_at DESC,id DESC LIMIT $9`, tenant(r), eventID, endpointID, status, after, before, cursorTime, cursorID, limit+1)
+	rows, err := s.DB.Query(r.Context(), `SELECT `+deliveryColumns+` FROM deliveries d LEFT JOIN delivery_reviews dr ON dr.delivery_id=d.id AND dr.organization_id=d.organization_id WHERE d.organization_id=$1 AND ($2::uuid IS NULL OR d.event_id=$2) AND ($3::uuid IS NULL OR d.endpoint_id=$3) AND ($4::text IS NULL OR d.status=$4) AND ($5::timestamptz IS NULL OR d.created_at >= $5) AND ($6::timestamptz IS NULL OR d.created_at < $6) AND ($7::timestamptz IS NULL OR (d.created_at,d.id)<($7,$8::uuid)) AND ($10::text IS NULL OR COALESCE(dr.status,'unreviewed')=$10) ORDER BY d.created_at DESC,d.id DESC LIMIT $9`, tenant(r), eventID, endpointID, status, after, before, cursorTime, cursorID, limit+1, reviewStatus)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
@@ -142,7 +157,7 @@ func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 404, "not_found", "Delivery not found")
 		return
 	}
-	d, err := scanDelivery(s.DB.QueryRow(r.Context(), `SELECT `+deliveryColumns+` FROM deliveries WHERE id=$1 AND organization_id=$2`, deliveryID, tenant(r)))
+	d, err := scanDelivery(s.DB.QueryRow(r.Context(), `SELECT `+deliveryColumns+` FROM deliveries d LEFT JOIN delivery_reviews dr ON dr.delivery_id=d.id AND dr.organization_id=d.organization_id WHERE d.id=$1 AND d.organization_id=$2`, deliveryID, tenant(r)))
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "not_found", "Delivery not found")
 		return
@@ -170,7 +185,28 @@ func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"delivery": d, "attempts": attempts})
+	rows.Close()
+	reviews, err := s.DB.Query(r.Context(), `SELECT status,note,api_key_id,created_at FROM delivery_review_history WHERE delivery_id=$1 AND organization_id=$2 ORDER BY created_at,id`, deliveryID, tenant(r))
+	if err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	defer reviews.Close()
+	history := make([]map[string]any, 0)
+	for reviews.Next() {
+		var status, note, keyID string
+		var createdAt time.Time
+		if err = reviews.Scan(&status, &note, &keyID, &createdAt); err != nil {
+			problem(w, 503, "storage_unavailable", "Storage unavailable")
+			return
+		}
+		history = append(history, map[string]any{"status": status, "note": note, "api_key_id": keyID, "created_at": createdAt})
+	}
+	if reviews.Err() != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	writeJSON(w, 200, map[string]any{"delivery": d, "attempts": attempts, "review_history": history})
 }
 
 func (s *Server) replayDelivery(w http.ResponseWriter, r *http.Request) {

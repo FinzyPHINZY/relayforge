@@ -27,17 +27,19 @@ type endpointPatch struct {
 	MaxAttempts *int      `json:"max_attempts"`
 }
 type endpointView struct {
-	ID              string           `json:"id"`
-	SigningSecretID string           `json:"signing_secret_id"`
-	SigningSecrets  []secretMetadata `json:"signing_secrets"`
-	URL             string           `json:"url"`
-	Description     string           `json:"description"`
-	Status          string           `json:"status"`
-	EventTypes      []string         `json:"event_types"`
-	TimeoutMS       int              `json:"timeout_ms"`
-	MaxAttempts     int              `json:"max_attempts"`
-	CreatedAt       time.Time        `json:"created_at"`
-	UpdatedAt       time.Time        `json:"updated_at"`
+	ID               string           `json:"id"`
+	SigningSecretID  string           `json:"signing_secret_id"`
+	SigningSecrets   []secretMetadata `json:"signing_secrets"`
+	URL              string           `json:"url"`
+	Description      string           `json:"description"`
+	Status           string           `json:"status"`
+	EventTypes       []string         `json:"event_types"`
+	TimeoutMS        int              `json:"timeout_ms"`
+	MaxAttempts      int              `json:"max_attempts"`
+	CreatedAt        time.Time        `json:"created_at"`
+	UpdatedAt        time.Time        `json:"updated_at"`
+	CircuitStatus    string           `json:"circuit_status"`
+	CircuitOpenUntil *time.Time       `json:"circuit_open_until,omitempty"`
 }
 
 type secretMetadata struct {
@@ -151,6 +153,7 @@ func (s *Server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	view.EventTypes = in.EventTypes
+	view.CircuitStatus = "closed"
 	view.SigningSecretID = secretID
 	view.SigningSecrets = []secretMetadata{{ID: secretID, State: "active", CreatedAt: secretCreated}}
 	writeJSON(w, 201, map[string]any{"endpoint": view, "signing_secret": secret, "signing_secret_id": secretID})
@@ -175,7 +178,7 @@ func (s *Server) getEndpoint(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) loadEndpoint(r *http.Request, endpointID string) (endpointView, error) {
 	var v endpointView
-	err := s.DB.QueryRow(r.Context(), `SELECT e.id,e.url,e.description,e.status,e.timeout_ms,e.max_attempts,e.created_at,e.updated_at,(SELECT s.id FROM endpoint_secrets s WHERE s.endpoint_id=e.id AND s.state='active') FROM endpoints e WHERE e.id=$1 AND e.organization_id=$2`, endpointID, tenant(r)).Scan(&v.ID, &v.URL, &v.Description, &v.Status, &v.TimeoutMS, &v.MaxAttempts, &v.CreatedAt, &v.UpdatedAt, &v.SigningSecretID)
+	err := s.DB.QueryRow(r.Context(), `SELECT e.id,e.url,e.description,e.status,e.timeout_ms,e.max_attempts,e.created_at,e.updated_at,(SELECT s.id FROM endpoint_secrets s WHERE s.endpoint_id=e.id AND s.state='active'),CASE WHEN ec.open_until IS NULL THEN 'closed' WHEN ec.probe_delivery_id IS NOT NULL OR ec.open_until<=now() THEN 'half_open' ELSE 'open' END,ec.open_until FROM endpoints e JOIN endpoint_circuits ec ON ec.endpoint_id=e.id AND ec.organization_id=e.organization_id WHERE e.id=$1 AND e.organization_id=$2`, endpointID, tenant(r)).Scan(&v.ID, &v.URL, &v.Description, &v.Status, &v.TimeoutMS, &v.MaxAttempts, &v.CreatedAt, &v.UpdatedAt, &v.SigningSecretID, &v.CircuitStatus, &v.CircuitOpenUntil)
 	if err != nil {
 		return v, err
 	}

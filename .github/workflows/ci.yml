@@ -78,7 +78,7 @@ jobs:
           test "$delivered" = 1
           delivery=$(curl -fsS "http://127.0.0.1:8080/v1/deliveries?event_id=$event_id" -H "Authorization: Bearer $key")
           delivery_id=$(printf '%s' "$delivery" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')
-          for route in endpoints events deliveries "events/$event_id" "deliveries/$delivery_id"; do
+          for route in endpoints events deliveries dead-letters "events/$event_id" "deliveries/$delivery_id"; do
             status=$(curl -sS -b /tmp/relayforge-dashboard-cookies.txt -o /tmp/relayforge-dashboard-page.html -w '%{http_code}' "http://127.0.0.1:3000/$route")
             test "$status" = 200
             if grep -q 'Could not load this view' /tmp/relayforge-dashboard-page.html; then exit 1; fi
