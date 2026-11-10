@@ -21,6 +21,8 @@ export type Endpoint = {
   event_types: string[];
   timeout_ms: number;
   max_attempts: number;
+  circuit_status: "closed" | "open" | "half_open";
+  circuit_open_until?: string;
   created_at: string;
 };
 
@@ -40,7 +42,10 @@ export type Delivery = {
   last_error_code?: string;
   created_at: string;
   completed_at?: string;
+  review_status?: "unreviewed" | "investigating" | "resolved";
 };
+
+export type ReviewHistoryEntry = { status: "investigating" | "resolved"; note: string; api_key_id: string; created_at: string };
 
 export type Attempt = {
   id: string;

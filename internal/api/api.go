@@ -66,6 +66,7 @@ func (s *Server) Router() http.Handler {
 		r.With(require("deliveries:read")).Get("/deliveries", s.listDeliveries)
 		r.With(require("deliveries:read")).Get("/deliveries/{id}", s.getDelivery)
 		r.With(require("deliveries:write")).Post("/deliveries/{id}/replay", s.replayDelivery)
+		r.With(require("deliveries:write")).Patch("/deliveries/{id}/review", s.reviewDelivery)
 		r.With(require("metrics:read")).Get("/metrics/summary", s.metricsSummary)
 	})
 	return otelhttp.NewHandler(r, "http.server")

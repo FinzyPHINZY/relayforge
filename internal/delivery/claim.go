@@ -31,7 +31,7 @@ func ClaimOne(ctx context.Context, pool *pgxpool.Pool, workerID string, lease ti
 	defer tx.Rollback(ctx)
 	var c Claimed
 	var timeoutMS int
-	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.endpoint_id,d.event_id,d.destination_url,d.timeout_ms,d.max_attempts,e.event_type,e.payload,e.created_at FROM deliveries d JOIN endpoints ep ON ep.id=d.endpoint_id AND ep.organization_id=d.organization_id JOIN events e ON e.id=d.event_id AND e.organization_id=d.organization_id WHERE d.status IN ('pending','retry_wait') AND d.next_attempt_at<=now() AND ep.status='active' ORDER BY d.next_attempt_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT 1`).Scan(&c.ID, &c.OrganizationID, &c.EndpointID, &c.EventID, &c.DestinationURL, &timeoutMS, &c.MaxAttempts, &c.EventType, &c.Payload, &c.EventCreatedAt)
+	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.endpoint_id,d.event_id,d.destination_url,d.timeout_ms,d.max_attempts,e.event_type,e.payload,e.created_at FROM deliveries d JOIN endpoints ep ON ep.id=d.endpoint_id AND ep.organization_id=d.organization_id JOIN endpoint_circuits ec ON ec.endpoint_id=ep.id AND ec.organization_id=ep.organization_id JOIN events e ON e.id=d.event_id AND e.organization_id=d.organization_id WHERE d.status IN ('pending','retry_wait') AND d.next_attempt_at<=now() AND ep.status='active' AND (ec.open_until IS NULL OR (ec.open_until<=now() AND ec.probe_delivery_id IS NULL)) ORDER BY d.next_attempt_at,d.id FOR UPDATE OF d,ec SKIP LOCKED LIMIT 1`).Scan(&c.ID, &c.OrganizationID, &c.EndpointID, &c.EventID, &c.DestinationURL, &timeoutMS, &c.MaxAttempts, &c.EventType, &c.Payload, &c.EventCreatedAt)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -47,6 +47,9 @@ func ClaimOne(ctx context.Context, pool *pgxpool.Pool, workerID string, lease ti
 	}
 	c.WorkerID = workerID
 	c.Timeout = time.Duration(timeoutMS) * time.Millisecond
+	if _, err = tx.Exec(ctx, `UPDATE endpoint_circuits SET probe_delivery_id=$2,updated_at=now() WHERE endpoint_id=$1 AND organization_id=$3 AND open_until IS NOT NULL AND open_until<=now() AND probe_delivery_id IS NULL`, c.EndpointID, c.ID, c.OrganizationID); err != nil {
+		return nil, err
+	}
 	err = tx.QueryRow(ctx, `UPDATE deliveries SET status='processing',lease_owner=$2,lease_expires_at=now()+($3::bigint*interval '1 microsecond'),lease_generation=lease_generation+1,attempt_count=attempt_count+1,updated_at=now() WHERE id=$1 AND status IN ('pending','retry_wait') AND attempt_count<max_attempts RETURNING attempt_count,lease_generation`, c.ID, workerID, lease.Microseconds()).Scan(&c.AttemptNumber, &c.LeaseGeneration)
 	if err != nil {
 		return nil, err
@@ -95,6 +98,9 @@ func ReclaimExpired(ctx context.Context, pool *pgxpool.Pool, limit int) (int, er
 	}
 	rows.Close()
 	for _, x := range items {
+		if _, err = tx.Exec(ctx, `UPDATE endpoint_circuits SET probe_delivery_id=NULL,updated_at=now() WHERE probe_delivery_id=$1 AND organization_id=$2`, x.id, x.org); err != nil {
+			return 0, err
+		}
 		_, err = tx.Exec(ctx, `UPDATE delivery_attempts SET finished_at=now(),error_code='lease_expired' WHERE delivery_id=$1 AND organization_id=$2 AND attempt_number=$3 AND finished_at IS NULL`, x.id, x.org, x.attempt)
 		if err != nil {
 			return 0, err

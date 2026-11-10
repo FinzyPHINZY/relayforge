@@ -77,3 +77,25 @@ export async function replayDelivery(formData: FormData) {
   revalidatePath("/deliveries");
   redirect(`/deliveries/${replay.id}`);
 }
+
+export async function reviewDelivery(formData: FormData) {
+  const key = await requireKey();
+  const id = String(formData.get("id") ?? "");
+  const status = String(formData.get("status") ?? "");
+  const note = String(formData.get("note") ?? "").trim();
+  if (!uuid.test(id) || (status !== "investigating" && status !== "resolved") || note.length > 500 || (status === "resolved" && !note)) {
+    redirect(`/deliveries/${encodeURIComponent(id)}?error=review`);
+  }
+  try {
+    await apiJson(key, `/v1/deliveries/${id}/review`, {
+      method: "PATCH",
+      body: JSON.stringify({ status, note }),
+    });
+  } catch {
+    redirect(`/deliveries/${id}?error=review`);
+  }
+  revalidatePath("/dead-letters");
+  revalidatePath("/deliveries");
+  revalidatePath(`/deliveries/${id}`);
+  redirect(`/deliveries/${id}`);
+}

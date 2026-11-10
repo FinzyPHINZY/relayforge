@@ -54,6 +54,8 @@ func Sweep(ctx context.Context, pool *pgxpool.Pool, now, cutoff time.Time, limit
 	for _, eventID := range ids {
 		for _, statement := range []string{
 			`DELETE FROM replay_requests WHERE source_delivery_id IN (SELECT id FROM deliveries WHERE event_id=$1) OR replay_delivery_id IN (SELECT id FROM deliveries WHERE event_id=$1)`,
+			`DELETE FROM delivery_review_history WHERE delivery_id IN (SELECT id FROM deliveries WHERE event_id=$1)`,
+			`DELETE FROM delivery_reviews WHERE delivery_id IN (SELECT id FROM deliveries WHERE event_id=$1)`,
 			`DELETE FROM delivery_attempts WHERE delivery_id IN (SELECT id FROM deliveries WHERE event_id=$1)`,
 			`DELETE FROM deliveries WHERE event_id=$1`,
 			`DELETE FROM outbox WHERE event_id=$1`,

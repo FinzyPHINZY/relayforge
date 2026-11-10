@@ -54,6 +54,14 @@ func Complete(ctx context.Context, pool *pgxpool.Pool, c Claimed, r Result) (boo
 	if tag.RowsAffected() != 1 {
 		return false, fmt.Errorf("attempt reservation missing")
 	}
+	if r.Retryable && r.Outcome != "success" {
+		_, err = tx.Exec(ctx, `UPDATE endpoint_circuits SET failure_streak=CASE WHEN probe_delivery_id=$3 THEN 3 ELSE failure_streak+1 END,open_until=CASE WHEN probe_delivery_id=$3 OR failure_streak+1>=3 THEN now()+interval '1 minute' ELSE NULL END,probe_delivery_id=NULL,updated_at=now() WHERE endpoint_id=$1 AND organization_id=$2 AND (open_until IS NULL OR probe_delivery_id=$3)`, c.EndpointID, c.OrganizationID, c.ID)
+	} else {
+		_, err = tx.Exec(ctx, `UPDATE endpoint_circuits SET failure_streak=0,open_until=NULL,probe_delivery_id=NULL,updated_at=now() WHERE endpoint_id=$1 AND organization_id=$2 AND (open_until IS NULL OR probe_delivery_id=$3)`, c.EndpointID, c.OrganizationID, c.ID)
+	}
+	if err != nil {
+		return false, err
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return false, err
 	}

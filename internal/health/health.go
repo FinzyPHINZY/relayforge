@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const SchemaVersion = 4
+const SchemaVersion = 6
 
 func Ready(ctx context.Context, pool *pgxpool.Pool) bool {
 	checkCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
