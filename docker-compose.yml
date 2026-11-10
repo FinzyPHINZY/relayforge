@@ -22,6 +22,13 @@ services:
       DATABASE_URL: postgres://webhooks:webhooks@postgres:5432/webhooks?sslmode=disable
     depends_on:
       postgres: {condition: service_healthy}
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 20
   api:
     build:
       context: .
@@ -34,9 +41,11 @@ services:
       ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:-local-v1}
       EVENT_RATE_LIMIT_PER_MINUTE: ${EVENT_RATE_LIMIT_PER_MINUTE:-600}
       MANAGEMENT_RATE_LIMIT_PER_MINUTE: ${MANAGEMENT_RATE_LIMIT_PER_MINUTE:-120}
+      REDIS_URL: redis://redis:6379/0
       DEMO_RECEIVER_ORIGIN: ${DEMO_RECEIVER_ORIGIN:-}
     depends_on:
       migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health/ready"]
       interval: 5s

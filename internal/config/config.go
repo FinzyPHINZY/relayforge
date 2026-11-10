@@ -8,14 +8,14 @@ import (
 )
 
 type Config struct {
-	DatabaseURL, ListenAddr, EncryptionKeyID string
-	EncryptionKey                            []byte
-	EventRateLimit, ManagementRateLimit      int
-	DemoReceiverOrigin                       string
+	DatabaseURL, ListenAddr, EncryptionKeyID, RedisURL string
+	EncryptionKey                                      []byte
+	EventRateLimit, ManagementRateLimit                int
+	DemoReceiverOrigin                                 string
 }
 
 func Load() (Config, error) {
-	c := Config{DatabaseURL: os.Getenv("DATABASE_URL"), ListenAddr: os.Getenv("LISTEN_ADDR"), EncryptionKeyID: os.Getenv("ENCRYPTION_KEY_ID")}
+	c := Config{DatabaseURL: os.Getenv("DATABASE_URL"), ListenAddr: os.Getenv("LISTEN_ADDR"), EncryptionKeyID: os.Getenv("ENCRYPTION_KEY_ID"), RedisURL: os.Getenv("REDIS_URL")}
 	if c.ListenAddr == "" {
 		c.ListenAddr = ":8080"
 	}
