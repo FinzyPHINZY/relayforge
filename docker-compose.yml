@@ -87,5 +87,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+  dashboard:
+    profiles: ["dashboard"]
+    build:
+      context: ./web/dashboard
+    ports:
+      - "127.0.0.1:${DASHBOARD_HOST_PORT:-3000}:3000"
+    environment:
+      RELAYFORGE_API_URL: http://api:8080
+      DASHBOARD_SESSION_KEY: ${DASHBOARD_SESSION_KEY:-}
+      DASHBOARD_SECURE_COOKIES: "false"
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/login"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
 volumes:
   postgres_data:

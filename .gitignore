@@ -8,3 +8,4 @@ scripts/
 go*.tar.gz
 web/dashboard/.next/
 web/dashboard/node_modules/
+web/dashboard/*.tsbuildinfo

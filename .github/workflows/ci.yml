@@ -6,6 +6,7 @@ jobs:
     env:
       ENCRYPTION_KEY_BASE64: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=
       DEMO_RECEIVER_ORIGIN: http://receiver:8090
+      DASHBOARD_SESSION_KEY: AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v6
@@ -29,13 +30,31 @@ jobs:
         with:
           name: benchmark-results
           path: benchmark-results.txt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build operator dashboard
+        working-directory: web/dashboard
+        run: |
+          corepack enable
+          pnpm install --frozen-lockfile
+          pnpm test
+          pnpm typecheck
+          pnpm build
       - name: Verify Compose demo delivery
         run: |
-          docker compose --profile demo up --build -d
+          docker compose --profile demo --profile dashboard up --build -d
           curl --retry 30 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8080/health/ready
           curl --retry 30 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:8090/health/live
+          curl --retry 30 --retry-connrefused --retry-delay 1 -fsS http://127.0.0.1:3000/login -o /tmp/relayforge-dashboard-login.html
+          grep -q 'Sign in to your workspace' /tmp/relayforge-dashboard-login.html
           bootstrap_output=$(DATABASE_URL='postgres://webhooks:webhooks@127.0.0.1:5432/webhooks?sslmode=disable' go run ./cmd/bootstrap -org 'CI demo')
           key=$(printf '%s' "$bootstrap_output" | awk '/API key/{print $NF}')
+          action_field=$(grep -oE '\$ACTION_ID_[A-Za-z0-9_]+' /tmp/relayforge-dashboard-login.html | head -1)
+          test -n "$action_field"
+          curl -fsS -c /tmp/relayforge-dashboard-cookies.txt -o /tmp/relayforge-dashboard-auth.html -F "$action_field=" -F "apiKey=$key" -H 'Origin: http://127.0.0.1:3000' http://127.0.0.1:3000/login
+          curl -fsS -b /tmp/relayforge-dashboard-cookies.txt http://127.0.0.1:3000/ -o /tmp/relayforge-dashboard-overview.html
+          grep -q 'Delivery at a glance' /tmp/relayforge-dashboard-overview.html
           endpoint=$(curl -fsS -X POST http://127.0.0.1:8080/v1/endpoints -H "Authorization: Bearer $key" -H 'Content-Type: application/json' -d '{"url":"http://receiver:8090/webhooks","event_types":["order.created"]}')
           secret=$(printf '%s' "$endpoint" | python3 -c 'import json,sys; print(json.load(sys.stdin)["signing_secret"])')
           config_body=$(printf '%s' "$secret" | python3 -c 'import json,sys; print(json.dumps({"secret":sys.stdin.read(),"failures":0}))')
@@ -48,4 +67,4 @@ jobs:
           exit 1
       - name: Stop Compose demo
         if: always()
-        run: docker compose --profile demo down -v
+        run: docker compose --profile demo --profile dashboard down -v

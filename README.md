@@ -32,7 +32,7 @@ Publisher → Go/Chi API → PostgreSQL event + outbox → 202 Accepted
                       Attempts, retry, replay
 ```
 
-PostgreSQL is the source of truth for accepted events, outbox records, delivery state, leases, and attempts. The custom Go worker engine uses bounded requests and database leases with fencing generations. Redis, accessed through go-redis, is reserved for P1 distributed throttling; it is never the durable delivery queue. The P1 dashboard uses Next.js, TypeScript, Tailwind CSS, and shadcn/ui.
+PostgreSQL is the source of truth for accepted events, outbox records, delivery state, leases, and attempts. The custom Go worker engine uses bounded requests and database leases with fencing generations. Redis, accessed through go-redis, is reserved for distributed throttling; it is never the durable delivery queue. The optional operator dashboard uses Next.js, TypeScript, Tailwind CSS, and shadcn/ui components.
 
 The backend uses Go, Chi, pgx, and sqlc, with OpenTelemetry trace spans and database-backed metrics. Integration tests use Go testing and Testcontainers. Docker Compose runs the local services, and GitHub Actions runs CI.
 
@@ -94,6 +94,12 @@ The receiver returns 503 twice, then 204. Retry backoff begins at 30 seconds; ch
 
 For an exhausted delivery, set the endpoint's `max_attempts` to 1 for a new event, configure one receiver failure, then call `POST /v1/deliveries/{id}/replay` with an `Idempotency-Key`. Replay creates a linked run and preserves the original attempt history.
 
+### Use the operator dashboard
+
+Generate a separate 32-byte dashboard session key with `openssl rand -base64 32` and set `DASHBOARD_SESSION_KEY` in `.env`. Start the dashboard profile with `docker compose --profile demo --profile dashboard up --build -d`, then open `http://localhost:3000/login`. Sign in with the scoped API key printed by `cmd/bootstrap`.
+
+The dashboard shows tenant-scoped metrics, endpoints, events, deliveries, attempt history, and replay controls. You can register and pause endpoints; a newly created endpoint's signing secret appears once. The browser submits the API key to the dashboard server at sign-in; the server verifies it and stores it in an encrypted HTTP-only cookie for eight hours. Browser code does not call the Go API with the key. Key revocation is enforced on subsequent API requests. The Compose dashboard binds to localhost and permits an HTTP cookie for local use; use TLS and secure cookies when deploying it beyond a local machine.
+
 ## Develop and test
 
 ```sh
@@ -115,6 +121,7 @@ The development Compose credentials in `docker-compose.yml` are for local use. S
 | --- | --- |
 | `cmd/api`, `cmd/bootstrap`, `cmd/migrate` | HTTP API, organization/key provisioning, and schema migration entry points. |
 | `cmd/dispatcher`, `cmd/worker`, `cmd/demo-receiver` | Outbox materialization, HTTP delivery, and optional local receiver. |
+| `web/dashboard` | Optional Next.js operator console and server-side API client. |
 | `internal/api`, `internal/security`, `internal/config` | Handlers, authorization and cryptography, and environment validation. |
 | `db/migrations`, `db/queries`, `internal/database/sqlc` | PostgreSQL schema, source queries, and generated Go query code. |
 | `tests/integration` | Database-backed behavior and tenant-isolation tests. |
