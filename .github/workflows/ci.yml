@@ -16,8 +16,19 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - name: Benchmark ingestion and delivery
-        if: github.event_name == 'workflow_dispatch' || github.ref_name == 'feat/reliability-and-demo'
-        run: go test ./tests/integration -run '^$' -bench 'Benchmark(EventIngestion|PublishToAcknowledgedDelivery)$' -benchtime=500x -count=1 -v
+        run: |
+          go test ./tests/integration -run '^$' -bench 'Benchmark(EventIngestion|PublishToAcknowledgedDelivery)$' -benchtime=500x -count=1 -v | tee benchmark-results.txt
+          {
+            echo '## Measured ingestion and delivery benchmarks'
+            echo 'Run: 500 iterations per benchmark on the GitHub-hosted Ubuntu runner with Testcontainers PostgreSQL.'
+            echo '```text'
+            grep -E '^(goos:|goarch:|pkg:|cpu:|Benchmark|[[:space:]]+benchmark_test.go:.*Go=)' benchmark-results.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results
+          path: benchmark-results.txt
       - name: Verify Compose demo delivery
         run: |
           docker compose --profile demo up --build -d
