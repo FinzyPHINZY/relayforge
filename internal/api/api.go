@@ -22,7 +22,11 @@ import (
 )
 
 type Server struct {
-	DB                                  *pgxpool.Pool
+	DB                 *pgxpool.Pool
+	DistributedLimiter interface {
+		Allow(context.Context, string, string, int) (bool, int, error)
+		Ping(context.Context) error
+	}
 	EncryptionKey                       []byte
 	EncryptionKeyID                     string
 	DemoReceiverOrigin                  string
@@ -70,6 +74,10 @@ func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	if !health.Ready(ctx, s.DB) {
 		problem(w, 503, "storage_unavailable", "Database is not ready")
+		return
+	}
+	if s.DistributedLimiter != nil && s.DistributedLimiter.Ping(ctx) != nil {
+		problem(w, 503, "rate_limit_unavailable", "Rate limiter is not ready")
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "ready"})
@@ -130,6 +138,23 @@ func (s *Server) rateLimit(next http.Handler) http.Handler {
 				limit = 600
 			} else {
 				limit = 120
+			}
+		}
+		if s.DistributedLimiter != nil {
+			allowed, retryAfter, err := s.DistributedLimiter.Allow(r.Context(), p.KeyID, category, limit)
+			if err == nil {
+				if !allowed {
+					w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
+					problem(w, 429, "rate_limited", "Request rate limit exceeded")
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Writes fail closed; reads retain a bounded local fallback.
+			if r.Method != http.MethodGet && r.Method != http.MethodHead {
+				problem(w, 503, "rate_limit_unavailable", "Rate limiter unavailable")
+				return
 			}
 		}
 		now := time.Now()

@@ -21,8 +21,8 @@ func Ready(ctx context.Context, pool *pgxpool.Pool) bool {
 
 // Serve exposes process liveness and database/schema readiness on an internal
 // port. The caller controls whether that port is published by the deployment.
-func Serve(ctx context.Context, pool *pgxpool.Pool, addr string) {
-	server := &http.Server{Addr: addr, Handler: Handler(pool), ReadHeaderTimeout: 5 * time.Second}
+func Serve(ctx context.Context, pool *pgxpool.Pool, addr string, dependencies ...func(context.Context) error) {
+	server := &http.Server{Addr: addr, Handler: Handler(pool, dependencies...), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			slog.Error("health server failed", "error", err)
@@ -34,13 +34,21 @@ func Serve(ctx context.Context, pool *pgxpool.Pool, addr string) {
 	_ = server.Shutdown(shutdownCtx)
 }
 
-func Handler(pool *pgxpool.Pool) http.Handler {
+func Handler(pool *pgxpool.Pool, dependencies ...func(context.Context) error) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /health/live", func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusOK) })
 	mux.HandleFunc("GET /health/ready", func(w http.ResponseWriter, r *http.Request) {
 		if !Ready(r.Context(), pool) {
 			http.Error(w, "not ready", http.StatusServiceUnavailable)
 			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 2*time.Second)
+		defer cancel()
+		for _, check := range dependencies {
+			if check(ctx) != nil {
+				http.Error(w, "dependency not ready", http.StatusServiceUnavailable)
+				return
+			}
 		}
 		w.WriteHeader(http.StatusOK)
 	})

@@ -40,7 +40,7 @@ The backend uses Go, Chi, pgx, and sqlc, with OpenTelemetry trace spans and data
 
 The v1 design limits payloads to 256 KiB, defaults to eight total delivery attempts, uses exponential backoff with jitter, and reclaims expired worker leases. Terminal delivery history is preserved; manual replay creates a new delivery run. Endpoint URLs must use HTTPS, and each outbound connection must recheck DNS and the actual destination IP to block private and metadata addresses. Redirects are disabled. API keys are hashed, signing secrets are encrypted at rest, and ordinary logs exclude raw credentials and payloads.
 
-Event ingestion and management requests have separate per-key rate limits. These limits are local to each API instance; monthly event and endpoint quotas are enforced in PostgreSQL. The dispatcher deletes expired idempotency records after at least 24 hours and removes events only when their outbox is dispatched and every delivery is terminal and past the configured retention window (30 days by default). The worker stops claiming on shutdown and allows in-flight attempts up to `WORKER_DRAIN_SECONDS` to complete.
+Event ingestion and management requests have separate per-key, per-minute rate limits. Compose uses Redis to share these limits across API instances (600 event requests and 120 management requests per minute by default). Exceeded limits return HTTP 429 with `Retry-After`. If Redis is unavailable, writes return HTTP 503, reads use a bounded local limit, and API readiness fails. A standalone API without `REDIS_URL` uses local limits. Monthly event and endpoint quotas remain enforced in PostgreSQL. The dispatcher deletes expired idempotency records after at least 24 hours and removes events only when their outbox is dispatched and every delivery is terminal and past the configured retention window (30 days by default). The worker stops claiming on shutdown and allows in-flight attempts up to `WORKER_DRAIN_SECONDS` to complete.
 
 ## Run locally
 
@@ -53,7 +53,7 @@ docker compose --profile demo up --build -d
 curl http://localhost:8080/health/ready
 ```
 
-Compose binds PostgreSQL to host port 5432 and the API to 8080 by default. If either port is occupied, set `POSTGRES_HOST_PORT` and `API_HOST_PORT` before running Compose. The examples below assume the defaults.
+Compose binds PostgreSQL to host port 5432 and the API to 8080 by default. Redis is available only to Compose services. If either published port is occupied, set `POSTGRES_HOST_PORT` and `API_HOST_PORT` before running Compose. The examples below assume the defaults.
 
 Provision an organization and scoped API key from the host:
 
@@ -123,5 +123,6 @@ The development Compose credentials in `docker-compose.yml` are for local use. S
 | `cmd/dispatcher`, `cmd/worker`, `cmd/demo-receiver` | Outbox materialization, HTTP delivery, and optional local receiver. |
 | `web/dashboard` | Optional Next.js operator console and server-side API client. |
 | `internal/api`, `internal/security`, `internal/config` | Handlers, authorization and cryptography, and environment validation. |
+| `internal/ratelimit` | Redis-backed API limits shared across instances. |
 | `db/migrations`, `db/queries`, `internal/database/sqlc` | PostgreSQL schema, source queries, and generated Go query code. |
 | `tests/integration` | Database-backed behavior and tenant-isolation tests. |

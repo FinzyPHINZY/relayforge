@@ -14,6 +14,7 @@ import (
 	"webhook_delivery/internal/config"
 	"webhook_delivery/internal/health"
 	"webhook_delivery/internal/observability"
+	"webhook_delivery/internal/ratelimit"
 )
 
 func main() {
@@ -35,10 +36,24 @@ func main() {
 		slog.Error("database unavailable", "error", err)
 		os.Exit(1)
 	}
+	var limiter *ratelimit.Redis
+	if cfg.RedisURL != "" {
+		client, err := ratelimit.NewClient(cfg.RedisURL)
+		if err != nil {
+			slog.Error("redis configuration failed", "error", err)
+			os.Exit(1)
+		}
+		defer client.Close()
+		limiter = ratelimit.NewRedis(client)
+	}
 	healthCtx, stopHealth := context.WithCancel(ctx)
 	defer stopHealth()
-	go health.Serve(healthCtx, pool, ":8081")
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: (&api.Server{DB: pool, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, EventRateLimit: cfg.EventRateLimit, ManagementRateLimit: cfg.ManagementRateLimit, DemoReceiverOrigin: cfg.DemoReceiverOrigin}).Router(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 * 1024}
+	if limiter == nil {
+		go health.Serve(healthCtx, pool, ":8081")
+	} else {
+		go health.Serve(healthCtx, pool, ":8081", limiter.Ping)
+	}
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: (&api.Server{DB: pool, DistributedLimiter: limiter, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, EventRateLimit: cfg.EventRateLimit, ManagementRateLimit: cfg.ManagementRateLimit, DemoReceiverOrigin: cfg.DemoReceiverOrigin}).Router(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 * 1024}
 	go func() {
 		slog.Info("API listening", "addr", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -14,6 +14,12 @@ jobs:
           go-version-file: go.mod
           cache: true
       - run: go mod tidy && go mod download
+      - name: Report module metadata for local sync
+        run: |
+          git diff -- go.mod go.sum > /tmp/relayforge-mod-diff
+          if test -s /tmp/relayforge-mod-diff; then
+            echo "::notice title=Module metadata::$(base64 -w0 /tmp/relayforge-mod-diff)"
+          fi
       - run: go vet ./...
       - run: go test ./...
       - name: Benchmark ingestion and delivery
