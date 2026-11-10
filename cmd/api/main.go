@@ -37,6 +37,10 @@ func main() {
 		os.Exit(1)
 	}
 	var limiter *ratelimit.Redis
+	var distributedLimiter interface {
+		Allow(context.Context, string, string, int) (bool, int, error)
+		Ping(context.Context) error
+	}
 	if cfg.RedisURL != "" {
 		client, err := ratelimit.NewClient(cfg.RedisURL)
 		if err != nil {
@@ -45,6 +49,7 @@ func main() {
 		}
 		defer client.Close()
 		limiter = ratelimit.NewRedis(client)
+		distributedLimiter = limiter
 	}
 	healthCtx, stopHealth := context.WithCancel(ctx)
 	defer stopHealth()
@@ -53,7 +58,7 @@ func main() {
 	} else {
 		go health.Serve(healthCtx, pool, ":8081", limiter.Ping)
 	}
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: (&api.Server{DB: pool, DistributedLimiter: limiter, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, EventRateLimit: cfg.EventRateLimit, ManagementRateLimit: cfg.ManagementRateLimit, DemoReceiverOrigin: cfg.DemoReceiverOrigin}).Router(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 * 1024}
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: (&api.Server{DB: pool, DistributedLimiter: distributedLimiter, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, EventRateLimit: cfg.EventRateLimit, ManagementRateLimit: cfg.ManagementRateLimit, DemoReceiverOrigin: cfg.DemoReceiverOrigin}).Router(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 * 1024}
 	go func() {
 		slog.Info("API listening", "addr", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
