@@ -21,12 +21,14 @@ import (
 	"webhook_delivery/internal/security"
 )
 
+type DistributedRateLimiter interface {
+	Allow(context.Context, string, string, int) (bool, int, error)
+	Ping(context.Context) error
+}
+
 type Server struct {
-	DB                 *pgxpool.Pool
-	DistributedLimiter interface {
-		Allow(context.Context, string, string, int) (bool, int, error)
-		Ping(context.Context) error
-	}
+	DB                                  *pgxpool.Pool
+	DistributedLimiter                  DistributedRateLimiter
 	EncryptionKey                       []byte
 	EncryptionKeyID                     string
 	DemoReceiverOrigin                  string

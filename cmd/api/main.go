@@ -37,10 +37,7 @@ func main() {
 		os.Exit(1)
 	}
 	var limiter *ratelimit.Redis
-	var distributedLimiter interface {
-		Allow(context.Context, string, string, int) (bool, int, error)
-		Ping(context.Context) error
-	}
+	var distributedLimiter api.DistributedRateLimiter
 	if cfg.RedisURL != "" {
 		client, err := ratelimit.NewClient(cfg.RedisURL)
 		if err != nil {
