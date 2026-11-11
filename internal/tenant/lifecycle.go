@@ -19,7 +19,8 @@ import (
 // encrypted signing secrets. It is a portability export, not a database backup.
 var exportQueries = []struct{ name, query string }{
 	{"organizations", `SELECT row_to_json(t) FROM (SELECT id,name,status,monthly_event_quota,max_endpoints,created_at,updated_at FROM organizations WHERE id=$1) t`},
-	{"api_keys", `SELECT row_to_json(t) FROM (SELECT id,organization_id,name,key_prefix,scopes,created_at,last_used_at,expires_at,revoked_at FROM api_keys WHERE organization_id=$1) t`},
+	{"api_keys", `SELECT row_to_json(t) FROM (SELECT id,organization_id,member_id,name,key_prefix,scopes,created_at,last_used_at,expires_at,revoked_at FROM api_keys WHERE organization_id=$1) t`},
+	{"team_members", `SELECT row_to_json(t) FROM (SELECT * FROM team_members WHERE organization_id=$1) t`},
 	{"endpoints", `SELECT row_to_json(t) FROM (SELECT * FROM endpoints WHERE organization_id=$1) t`},
 	{"endpoint_secrets", `SELECT row_to_json(t) FROM (SELECT id,organization_id,endpoint_id,key_id,state,created_at,retired_at,overlap_until FROM endpoint_secrets WHERE organization_id=$1) t`},
 	{"subscriptions", `SELECT row_to_json(t) FROM (SELECT * FROM subscriptions WHERE organization_id=$1) t`},
@@ -213,6 +214,7 @@ func Purge(ctx context.Context, pool *pgxpool.Pool, orgID, exportPath string) er
 		`DELETE FROM subscriptions WHERE organization_id=$1`,
 		`DELETE FROM endpoints WHERE organization_id=$1`,
 		`DELETE FROM api_keys WHERE organization_id=$1`,
+		`DELETE FROM team_members WHERE organization_id=$1`,
 		`DELETE FROM monthly_event_usage WHERE organization_id=$1`,
 		`DELETE FROM organization_scheduling WHERE organization_id=$1`,
 		`DELETE FROM organizations WHERE id=$1`,

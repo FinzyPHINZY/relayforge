@@ -42,6 +42,7 @@ type Server struct {
 type principal struct {
 	KeyID  string
 	OrgID  string
+	Role   string
 	Scopes map[string]bool
 }
 type contextKey int
@@ -71,6 +72,9 @@ func (s *Server) Router() http.Handler {
 		r.With(require("deliveries:write")).Patch("/deliveries/{id}/review", s.reviewDelivery)
 		r.With(require("metrics:read")).Get("/metrics/summary", s.metricsSummary)
 		r.With(require("metrics:read")).Get("/analytics/deliveries", s.deliveryAnalytics)
+		r.With(require("team:read")).Get("/team/members", s.listTeamMembers)
+		r.With(require("team:write")).Post("/team/members", s.createTeamMember)
+		r.With(require("team:write")).Patch("/team/members/{id}", s.patchTeamMember)
 	})
 	return otelhttp.NewHandler(r, "http.server")
 }
@@ -104,7 +108,8 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		var hash []byte
 		var orgID, keyID string
 		var scopes []string
-		err = s.DB.QueryRow(r.Context(), `SELECT k.id,k.key_hash, k.organization_id, k.scopes FROM api_keys k JOIN organizations o ON o.id=k.organization_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND o.status='active'`, prefix).Scan(&keyID, &hash, &orgID, &scopes)
+		var role string
+		err = s.DB.QueryRow(r.Context(), `SELECT k.id,k.key_hash,k.organization_id,k.scopes,COALESCE(m.role,'owner') FROM api_keys k JOIN organizations o ON o.id=k.organization_id LEFT JOIN team_members m ON m.id=k.member_id AND m.organization_id=k.organization_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND o.status='active' AND (m.id IS NULL OR m.status='active')`, prefix).Scan(&keyID, &hash, &orgID, &scopes, &role)
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem(w, 401, "unauthorized", "Invalid API key")
 			return
@@ -119,9 +124,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		set := make(map[string]bool, len(scopes))
 		for _, scope := range scopes {
-			set[scope] = true
+			set[scope] = roleAllows(role, scope)
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, principal{KeyID: keyID, OrgID: orgID, Scopes: set})))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, principal{KeyID: keyID, OrgID: orgID, Role: role, Scopes: set})))
 	})
 }
 
