@@ -1,0 +1,140 @@
+# Single-host test deployment. Provide values with an env file outside Git.
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: webhooks
+      POSTGRES_USER: webhooks
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U webhooks -d webhooks"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+  migrate:
+    build:
+      context: ..
+      args: {TARGET: migrate}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    depends_on:
+      postgres: {condition: service_healthy}
+  api:
+    build:
+      context: ..
+      args: {TARGET: api}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      ENCRYPTION_KEY_BASE64: ${ENCRYPTION_KEY_BASE64:?Set ENCRYPTION_KEY_BASE64}
+      ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:?Set ENCRYPTION_KEY_ID}
+      REDIS_URL: redis://redis:6379/0
+      EVENT_RATE_LIMIT_PER_MINUTE: ${EVENT_RATE_LIMIT_PER_MINUTE:-600}
+      MANAGEMENT_RATE_LIMIT_PER_MINUTE: ${MANAGEMENT_RATE_LIMIT_PER_MINUTE:-120}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+  dispatcher:
+    build:
+      context: ..
+      args: {TARGET: dispatcher}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+  worker:
+    build:
+      context: ..
+      args: {TARGET: worker}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      ENCRYPTION_KEY_BASE64: ${ENCRYPTION_KEY_BASE64:?Set ENCRYPTION_KEY_BASE64}
+      ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:?Set ENCRYPTION_KEY_ID}
+      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
+      ENDPOINT_CONCURRENCY_LIMIT: ${ENDPOINT_CONCURRENCY_LIMIT:-2}
+      TENANT_CONCURRENCY_LIMIT: ${TENANT_CONCURRENCY_LIMIT:-10}
+      WORKER_DRAIN_SECONDS: ${WORKER_DRAIN_SECONDS:-35}
+    stop_grace_period: 45s
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+  dashboard:
+    build:
+      context: ../web/dashboard
+    environment:
+      RELAYFORGE_API_URL: http://api:8080
+      DASHBOARD_SESSION_KEY: ${DASHBOARD_SESSION_KEY:?Set DASHBOARD_SESSION_KEY}
+      DASHBOARD_SECURE_COOKIES: "true"
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/login"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      RELAYFORGE_DASHBOARD_DOMAIN: ${RELAYFORGE_DASHBOARD_DOMAIN:?Set dashboard domain}
+      RELAYFORGE_API_DOMAIN: ${RELAYFORGE_API_DOMAIN:?Set API domain}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      dashboard: {condition: service_healthy}
+      api: {condition: service_healthy}
+    restart: unless-stopped
+  tenant-admin:
+    profiles: ["ops"]
+    build:
+      context: ..
+      args: {TARGET: tenant-admin}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+    volumes:
+      - ${TENANT_EXPORT_DIR:-./private-exports}:/exports
+    depends_on:
+      postgres: {condition: service_healthy}
+volumes:
+  postgres_data:
+  caddy_data:
+  caddy_config:
+secrets:
+  postgres_password:
+    file: ${DB_SECRET_PATH:?Set path to database secret file}

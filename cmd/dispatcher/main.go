@@ -36,7 +36,7 @@ func main() {
 	days := 30
 	if raw := os.Getenv("RETENTION_DAYS"); raw != "" {
 		n, e := strconv.Atoi(raw)
-		if e != nil || n < 1 || n > 3650 {
+		if e != nil || n < 30 || n > 3650 {
 			slog.Error("invalid retention days")
 			os.Exit(1)
 		}

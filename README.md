@@ -42,6 +42,8 @@ Trace context follows an accepted event through PostgreSQL into its outbox dispa
 
 The v1 design limits payloads to 256 KiB, defaults to eight total delivery attempts, uses exponential backoff with jitter, and reclaims expired worker leases. Terminal delivery history is preserved; manual replay creates a new delivery run. Endpoint URLs must use HTTPS, and each outbound connection must recheck DNS and the actual destination IP to block private and metadata addresses. Redirects are disabled. API keys are hashed, signing secrets are encrypted at rest, and ordinary logs exclude raw credentials and payloads.
 
+Event and delivery history is retained for at least 30 days by default. The retention sweep removes an event only after its outbox is dispatched and every delivery run is terminal and has been complete for 30 days. Failed deliveries remain replayable during that period; pending work is never removed by the sweep. Expired idempotency records remain for at least 24 hours. Set `RETENTION_DAYS` between 30 and 3650 to extend the history window.
+
 Each endpoint has a PostgreSQL-backed circuit breaker shared by workers. Three consecutive retryable failures pause new claims for one minute. When the pause expires, one delivery probes the receiver; success closes the circuit and a retryable failure opens it again. Non-retryable responses do not open the circuit. `GET /v1/endpoints` shows each circuit's state and next probe time.
 
 Workers share claim capacity in PostgreSQL: two in-flight deliveries per endpoint and ten per tenant by default. Set `ENDPOINT_CONCURRENCY_LIMIT` and `TENANT_CONCURRENCY_LIMIT` to change those limits. Due claims prefer the tenant served least recently, so an older backlog from one tenant does not always take the next worker slot. Completed and reclaimed leases release capacity. These limits govern concurrent attempts, not monthly event quotas.
@@ -125,11 +127,25 @@ For a sustained two-tenant run, use `RELAYFORGE_LOAD_SECONDS=30 go test ./tests/
 
 The development Compose credentials in `docker-compose.yml` are for local use. Supply production credentials and encryption keys through deployment secrets management, and keep raw API keys, signing secrets, and event payloads out of ordinary logs.
 
+### Single-host test deployment
+
+`deploy/compose.yaml` runs the application behind Caddy HTTPS on a server with two DNS names: one for the dashboard and one for the API. PostgreSQL and Redis have no published host ports. Keep an env file outside the repository with `DB_SECRET_PATH` (path to a private file containing the database password), a matching URL-encoded `DATABASE_URL` pointing at `postgres`, `ENCRYPTION_KEY_BASE64`, `ENCRYPTION_KEY_ID`, `DASHBOARD_SESSION_KEY`, `RELAYFORGE_DASHBOARD_DOMAIN`, and `RELAYFORGE_API_DOMAIN`. Generate separate 32-byte encryption and session keys; protect both the env file and the password file with mode 0600. Point both DNS names at the server and open TCP 80/443 and UDP 443 before starting:
+
+```sh
+docker compose --env-file /private/relayforge.env -f deploy/compose.yaml up --build -d
+docker compose --env-file /private/relayforge.env -f deploy/compose.yaml ps
+```
+
+Migrations complete before the API and workers start. Confirm both HTTPS health/dashboard routes and a signed test delivery after startup. Back up PostgreSQL regularly to private off-host storage and test a restore before relying on the deployment. For example, with a private backup directory and a restrictive shell umask, run `docker compose --env-file /private/relayforge.env -f deploy/compose.yaml exec -T postgres pg_dump -U webhooks -Fc webhooks > /private/backups/relayforge.dump`. Keep the encryption key alongside the backup in approved secret storage.
+
+For tenant removal, `cmd/tenant-admin` supports `-action=suspend`, `-action=export -file=<new-private-file>`, and `-action=purge -file=<export-file> -confirm-org-id=<same-id>`. Suspension stops new API access and queued delivery claims; existing HTTP attempts can finish. The export is a JSON Lines customer-data snapshot with credential metadata but no API key hashes or signing-secret ciphertext. Purge requires a completed export and no active attempts. Take a separate database backup and follow a maintenance procedure before purging; the export is not a database restore backup.
+
 ## Repository guide
 
 | Path | Purpose |
 | --- | --- |
 | `cmd/api`, `cmd/bootstrap`, `cmd/migrate` | HTTP API, organization/key provisioning, and schema migration entry points. |
+| `cmd/tenant-admin` | Operator-only tenant suspension, export, and confirmed purge. |
 | `cmd/dispatcher`, `cmd/worker`, `cmd/demo-receiver` | Outbox materialization, HTTP delivery, and optional local receiver. |
 | `web/dashboard` | Optional Next.js operator console and server-side API client. |
 | `internal/api`, `internal/security`, `internal/config` | Handlers, authorization and cryptography, and environment validation. |
