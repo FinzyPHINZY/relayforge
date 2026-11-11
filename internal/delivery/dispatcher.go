@@ -25,7 +25,7 @@ func DispatchBatch(ctx context.Context, pool *pgxpool.Pool, limit int) (int, err
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT o.id,o.organization_id,o.event_id,e.event_type,e.traceparent FROM outbox o JOIN events e ON e.id=o.event_id AND e.organization_id=o.organization_id JOIN organizations org ON org.id=o.organization_id WHERE o.status='pending' AND org.status='active' ORDER BY o.created_at,o.id FOR UPDATE OF o SKIP LOCKED FOR SHARE OF org LIMIT $1`, limit)
+	rows, err := tx.Query(ctx, `SELECT o.id,o.organization_id,o.event_id,e.event_type,e.traceparent FROM outbox o JOIN events e ON e.id=o.event_id AND e.organization_id=o.organization_id JOIN organizations org ON org.id=o.organization_id WHERE o.status='pending' AND o.available_at<=now() AND org.status='active' ORDER BY o.available_at,o.id FOR UPDATE OF o SKIP LOCKED FOR SHARE OF org LIMIT $1`, limit)
 	if err != nil {
 		return 0, err
 	}
