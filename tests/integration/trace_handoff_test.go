@@ -14,13 +14,16 @@ import (
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 	"webhook_delivery/internal/delivery"
 )
 
 func TestTraceContextSurvivesAsyncDeliveryHandoffs(t *testing.T) {
 	previousProvider := otel.GetTracerProvider()
 	previousPropagator := otel.GetTextMapPropagator()
-	provider := sdktrace.NewTracerProvider()
+	recorder := tracetest.NewSpanRecorder()
+	provider := sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder))
 	otel.SetTracerProvider(provider)
 	otel.SetTextMapPropagator(propagation.TraceContext{})
 	t.Cleanup(func() {
@@ -76,8 +79,54 @@ func TestTraceContextSurvivesAsyncDeliveryHandoffs(t *testing.T) {
 	if !strings.Contains(deliveryParent, traceID) || deliveryParent == eventParent {
 		t.Fatalf("delivery traceparent=%q event=%q", deliveryParent, eventParent)
 	}
-	claim, err := delivery.ClaimOne(context.Background(), pool, "trace-worker", 45*time.Second)
-	if err != nil || claim == nil || !strings.Contains(claim.TraceParent, traceID) {
-		t.Fatalf("claim=%+v err=%v", claim, err)
+	attempts := make(chan string, 1)
+	runCtx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	engine := delivery.Engine{DB: pool, WorkerID: "trace-worker", Concurrency: 1, EndpointConcurrency: 2, TenantConcurrency: 2,
+		SendFunc: func(ctx context.Context, claim delivery.Claimed) delivery.Result {
+			attempts <- trace.SpanContextFromContext(ctx).TraceID().String()
+			return delivery.Result{Outcome: "success", HTTPStatus: 204}
+		}}
+	go func() { engine.Run(runCtx); close(done) }()
+	t.Cleanup(func() { cancel(); <-done })
+	deadline := time.Now().Add(8 * time.Second)
+	var status string
+	for time.Now().Before(deadline) {
+		if err := pool.QueryRow(context.Background(), `SELECT status FROM deliveries WHERE event_id=$1`, accepted.ID).Scan(&status); err != nil {
+			t.Fatal(err)
+		}
+		if status == "succeeded" {
+			break
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+	if status != "succeeded" {
+		t.Fatalf("delivery status=%s", status)
+	}
+	cancel()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		t.Fatal("worker did not stop")
+	}
+	select {
+	case attemptTrace := <-attempts:
+		if attemptTrace != traceID {
+			t.Fatalf("attempt trace=%s", attemptTrace)
+		}
+	default:
+		t.Fatal("attempt was not recorded")
+	}
+	seen := map[string]bool{}
+	for _, span := range recorder.Ended() {
+		if span.SpanContext().TraceID().String() != traceID {
+			continue
+		}
+		seen[span.Name()] = true
+	}
+	for _, name := range []string{"event.accept", "outbox.dispatch", "delivery.claim", "webhook.attempt", "delivery.complete"} {
+		if !seen[name] {
+			t.Fatalf("missing correlated span %q: seen=%v", name, seen)
+		}
 	}
 }
