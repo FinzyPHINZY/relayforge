@@ -36,11 +36,15 @@ PostgreSQL is the source of truth for accepted events, outbox records, delivery 
 
 The backend uses Go, Chi, pgx, and sqlc, with OpenTelemetry trace spans and database-backed metrics. Integration tests use Go testing and Testcontainers. Docker Compose runs the local services, and GitHub Actions runs CI.
 
+Trace context follows an accepted event through PostgreSQL into its outbox dispatch, delivery claim, and HTTP attempt. The services log spans with a shared trace ID; the trace identifier is not included in public API responses or webhook requests.
+
 ## Security and recovery design
 
 The v1 design limits payloads to 256 KiB, defaults to eight total delivery attempts, uses exponential backoff with jitter, and reclaims expired worker leases. Terminal delivery history is preserved; manual replay creates a new delivery run. Endpoint URLs must use HTTPS, and each outbound connection must recheck DNS and the actual destination IP to block private and metadata addresses. Redirects are disabled. API keys are hashed, signing secrets are encrypted at rest, and ordinary logs exclude raw credentials and payloads.
 
 Each endpoint has a PostgreSQL-backed circuit breaker shared by workers. Three consecutive retryable failures pause new claims for one minute. When the pause expires, one delivery probes the receiver; success closes the circuit and a retryable failure opens it again. Non-retryable responses do not open the circuit. `GET /v1/endpoints` shows each circuit's state and next probe time.
+
+Workers share claim capacity in PostgreSQL: two in-flight deliveries per endpoint and ten per tenant by default. Set `ENDPOINT_CONCURRENCY_LIMIT` and `TENANT_CONCURRENCY_LIMIT` to change those limits. Due claims prefer the tenant served least recently, so an older backlog from one tenant does not always take the next worker slot. Completed and reclaimed leases release capacity. These limits govern concurrent attempts, not monthly event quotas.
 
 Exhausted deliveries enter an unreviewed dead-letter queue in the dashboard. Operators can mark a delivery investigating or resolved with `PATCH /v1/deliveries/{id}/review`; resolutions require a note. Review changes are recorded in an audit history returned by `GET /v1/deliveries/{id}`. `GET /v1/deliveries?review_status=unreviewed|investigating|resolved` filters the queue. Review state does not change delivery state or automatically replay an event.
 
@@ -116,6 +120,8 @@ Integration tests start real PostgreSQL with Testcontainers and require Docker a
 For a focused failure demonstration, run `go test ./tests/integration -run 'Test(CommittedEventSurvivesLostHTTPResponse|DispatchFailureRollsBackMaterializedDeliveries|DatabaseRestartPreservesAcceptedBacklog|SlowReceiverTimesOutWithoutBlockingRecovery)$' -count=1 -v`. It checks a lost acceptance response, atomic dispatch rollback, recovery after PostgreSQL restarts, and a bounded timeout for a slow receiver.
 
 To reproduce the benchmark on a Docker-capable machine, run `go test ./tests/integration -run '^$' -bench 'Benchmark(EventIngestion|PublishToAcknowledgedDelivery)$' -benchtime=500x -count=1 -v`. It reports throughput, allocations, and p50/p95/p99 latency. The delivery benchmark includes event acceptance, outbox dispatch, HTTP send, and attempt persistence. Each CI run publishes its measured output as a `benchmark-results` artifact and job summary, including the runner CPU and Go version. These short fixed-iteration measurements are a baseline, not a sustained-load result or a latency SLO.
+
+For a sustained two-tenant run, use `RELAYFORGE_LOAD_SECONDS=30 go test ./tests/integration -run '^TestSustainedDeliveryLoad$' -count=1 -timeout=2m -v`. It offers roughly 20 events per second to an in-process API backed by Testcontainers PostgreSQL, four workers, and a local receiver, then waits for delivery. The `LOAD_RESULT` line reports measured acceptance and delivery rates, p50/p95/p99 acceptance latency, queue age, memory change, and environment details. CI runs a shorter 15-second version and publishes `load-results`; results are evidence for that runner, not a throughput promise.
 
 The development Compose credentials in `docker-compose.yml` are for local use. Supply production credentials and encryption keys through deployment secrets management, and keep raw API keys, signing secrets, and event payloads out of ordinary logs.
 

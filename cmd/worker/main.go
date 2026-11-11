@@ -52,6 +52,24 @@ func main() {
 		}
 		concurrency = n
 	}
+	endpointConcurrency := 2
+	if raw := os.Getenv("ENDPOINT_CONCURRENCY_LIMIT"); raw != "" {
+		n, e := strconv.Atoi(raw)
+		if e != nil || n < 1 || n > 100 {
+			slog.Error("invalid endpoint concurrency limit")
+			os.Exit(1)
+		}
+		endpointConcurrency = n
+	}
+	tenantConcurrency := 10
+	if raw := os.Getenv("TENANT_CONCURRENCY_LIMIT"); raw != "" {
+		n, e := strconv.Atoi(raw)
+		if e != nil || n < 1 || n > 1000 {
+			slog.Error("invalid tenant concurrency limit")
+			os.Exit(1)
+		}
+		tenantConcurrency = n
+	}
 	drainSeconds := 35
 	if raw := os.Getenv("WORKER_DRAIN_SECONDS"); raw != "" {
 		n, e := strconv.Atoi(raw)
@@ -61,6 +79,6 @@ func main() {
 		}
 		drainSeconds = n
 	}
-	engine := delivery.Engine{DB: pool, Sender: delivery.Sender{DB: pool, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, DemoReceiverOrigin: cfg.DemoReceiverOrigin}, WorkerID: workerID, Concurrency: concurrency, Lease: 45 * time.Second, DrainTimeout: time.Duration(drainSeconds) * time.Second}
+	engine := delivery.Engine{DB: pool, Sender: delivery.Sender{DB: pool, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, DemoReceiverOrigin: cfg.DemoReceiverOrigin}, WorkerID: workerID, Concurrency: concurrency, EndpointConcurrency: endpointConcurrency, TenantConcurrency: tenantConcurrency, Lease: 45 * time.Second, DrainTimeout: time.Duration(drainSeconds) * time.Second}
 	engine.Run(ctx)
 }

@@ -11,8 +11,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"go.opentelemetry.io/otel"
 	"webhook_delivery/internal/database/sqlc"
 	"webhook_delivery/internal/id"
+	"webhook_delivery/internal/observability"
 )
 
 var eventTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
@@ -59,7 +61,8 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	orgID := tenant(r)
-	ctx := r.Context()
+	ctx, span := otel.Tracer("relayforge/api").Start(r.Context(), "event.accept")
+	defer span.End()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
@@ -119,7 +122,7 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	payloadHash := sha256.Sum256(canonical)
 	var created time.Time
-	err = tx.QueryRow(ctx, `INSERT INTO events (id,organization_id,event_type,payload,idempotency_key,payload_sha256) VALUES ($1,$2,$3,$4,$5,$6) RETURNING created_at`, eventID, orgID, input.Type, canonical, nullable(key), payloadHash[:]).Scan(&created)
+	err = tx.QueryRow(ctx, `INSERT INTO events (id,organization_id,event_type,payload,idempotency_key,payload_sha256,traceparent) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING created_at`, eventID, orgID, input.Type, canonical, nullable(key), payloadHash[:], nullable(observability.TraceParent(ctx))).Scan(&created)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return

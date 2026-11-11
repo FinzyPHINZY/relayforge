@@ -30,6 +30,20 @@ jobs:
         with:
           name: benchmark-results
           path: benchmark-results.txt
+      - name: Sustained two-tenant delivery load
+        run: |
+          RELAYFORGE_LOAD_SECONDS=15 go test ./tests/integration -run '^TestSustainedDeliveryLoad$' -count=1 -timeout=2m -v | tee load-results.txt
+          {
+            echo '## Sustained two-tenant delivery load'
+            echo '15-second offered load, 20 requests/second target, four workers, two tenants, Testcontainers PostgreSQL and local HTTP receiver.'
+            echo '```text'
+            grep 'LOAD_RESULT' load-results.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: load-results
+          path: load-results.txt
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
