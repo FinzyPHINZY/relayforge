@@ -7,6 +7,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 )
@@ -19,7 +20,22 @@ func Start(service string) func(context.Context) error {
 		sdktrace.WithResource(resource.NewWithAttributes("", attribute.String("service.name", service))),
 	)
 	otel.SetTracerProvider(provider)
+	otel.SetTextMapPropagator(propagation.TraceContext{})
 	return provider.Shutdown
+}
+
+// TraceParent serializes only the W3C parent identifier for durable handoffs.
+func TraceParent(ctx context.Context) string {
+	carrier := propagation.MapCarrier{}
+	propagation.TraceContext{}.Inject(ctx, carrier)
+	return carrier.Get("traceparent")
+}
+
+func ContextWithTraceParent(ctx context.Context, parent string) context.Context {
+	if parent == "" {
+		return ctx
+	}
+	return propagation.TraceContext{}.Extract(ctx, propagation.MapCarrier{"traceparent": parent})
 }
 
 type logExporter struct{}

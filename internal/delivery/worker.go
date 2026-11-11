@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
+	"webhook_delivery/internal/observability"
 )
 
 // Complete commits the attempt result and delivery transition together. A
@@ -54,6 +55,20 @@ func Complete(ctx context.Context, pool *pgxpool.Pool, c Claimed, r Result) (boo
 	if tag.RowsAffected() != 1 {
 		return false, fmt.Errorf("attempt reservation missing")
 	}
+	tag, err = tx.Exec(ctx, `UPDATE endpoint_circuits SET active_claims=active_claims-1,updated_at=now() WHERE endpoint_id=$1 AND organization_id=$2 AND active_claims>0`, c.EndpointID, c.OrganizationID)
+	if err != nil {
+		return false, err
+	}
+	if tag.RowsAffected() != 1 {
+		return false, fmt.Errorf("endpoint claim accounting missing")
+	}
+	tag, err = tx.Exec(ctx, `UPDATE organization_scheduling SET active_claims=active_claims-1,updated_at=now() WHERE organization_id=$1 AND active_claims>0`, c.OrganizationID)
+	if err != nil {
+		return false, err
+	}
+	if tag.RowsAffected() != 1 {
+		return false, fmt.Errorf("tenant claim accounting missing")
+	}
 	if r.Retryable && r.Outcome != "success" {
 		_, err = tx.Exec(ctx, `UPDATE endpoint_circuits SET failure_streak=CASE WHEN probe_delivery_id=$3 THEN 3 ELSE failure_streak+1 END,open_until=CASE WHEN probe_delivery_id=$3 OR failure_streak+1>=3 THEN now()+interval '1 minute' ELSE NULL END,probe_delivery_id=NULL,updated_at=now() WHERE endpoint_id=$1 AND organization_id=$2 AND (open_until IS NULL OR probe_delivery_id=$3)`, c.EndpointID, c.OrganizationID, c.ID)
 	} else {
@@ -82,18 +97,26 @@ func nullableError(code string) any {
 }
 
 type Engine struct {
-	DB           *pgxpool.Pool
-	Sender       Sender
-	WorkerID     string
-	Concurrency  int
-	Lease        time.Duration
-	DrainTimeout time.Duration
-	SendFunc     func(context.Context, Claimed) Result
+	DB                  *pgxpool.Pool
+	Sender              Sender
+	WorkerID            string
+	Concurrency         int
+	EndpointConcurrency int
+	TenantConcurrency   int
+	Lease               time.Duration
+	DrainTimeout        time.Duration
+	SendFunc            func(context.Context, Claimed) Result
 }
 
 func (e Engine) Run(ctx context.Context) {
 	if e.Concurrency < 1 {
 		e.Concurrency = 1
+	}
+	if e.EndpointConcurrency < 1 {
+		e.EndpointConcurrency = 2
+	}
+	if e.TenantConcurrency < 1 {
+		e.TenantConcurrency = 10
 	}
 	if e.Lease <= 0 {
 		e.Lease = 45 * time.Second
@@ -144,7 +167,7 @@ func (e Engine) Run(ctx context.Context) {
 
 func (e Engine) workLoop(claimCtx, sendCtx context.Context, workerID string) {
 	for claimCtx.Err() == nil {
-		claim, err := ClaimOne(claimCtx, e.DB, workerID, e.Lease)
+		claim, err := ClaimOneWithLimits(claimCtx, e.DB, workerID, e.Lease, e.EndpointConcurrency, e.TenantConcurrency)
 		if err != nil {
 			if claimCtx.Err() == nil {
 				slog.Error("claim failed", "error", err)
@@ -156,7 +179,7 @@ func (e Engine) workLoop(claimCtx, sendCtx context.Context, workerID string) {
 			pause(claimCtx, time.Second)
 			continue
 		}
-		attemptCtx, span := otel.Tracer("relayforge/worker").Start(sendCtx, "webhook.attempt")
+		attemptCtx, span := otel.Tracer("relayforge/worker").Start(observability.ContextWithTraceParent(sendCtx, claim.TraceParent), "webhook.attempt")
 		var result Result
 		if e.SendFunc != nil {
 			result = e.SendFunc(attemptCtx, *claim)

@@ -10,6 +10,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"go.opentelemetry.io/otel"
 	"webhook_delivery/internal/id"
+	"webhook_delivery/internal/observability"
 )
 
 type deliveryView struct {
@@ -280,7 +281,7 @@ func (s *Server) replayDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "internal_error", "ID generation failed")
 		return
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO deliveries (id,organization_id,event_id,endpoint_id,run_number,replayed_from_delivery_id,destination_url,timeout_ms,max_attempts) SELECT $1,$2,$3,e.id,$4,$5,e.url,e.timeout_ms,e.max_attempts FROM endpoints e WHERE e.id=$6 AND e.organization_id=$2 AND e.status='active'`, newID, orgID, eventID, runNumber, sourceID, endpointID)
+	_, err = tx.Exec(ctx, `INSERT INTO deliveries (id,organization_id,event_id,endpoint_id,run_number,replayed_from_delivery_id,destination_url,timeout_ms,max_attempts,traceparent) SELECT $1,$2,$3,e.id,$4,$5,e.url,e.timeout_ms,e.max_attempts,$7 FROM endpoints e WHERE e.id=$6 AND e.organization_id=$2 AND e.status='active'`, newID, orgID, eventID, runNumber, sourceID, endpointID, nullable(observability.TraceParent(ctx)))
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
