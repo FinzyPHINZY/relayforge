@@ -1,0 +1,9 @@
+{$RELAYFORGE_DASHBOARD_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy dashboard:3000
+}
+
+{$RELAYFORGE_API_DOMAIN} {
+    encode zstd gzip
+    reverse_proxy api:8080
+}

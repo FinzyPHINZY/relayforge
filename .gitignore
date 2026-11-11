@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 .DS_Store
 coverage.out
 bin/
@@ -9,3 +11,4 @@ go*.tar.gz
 web/dashboard/.next/
 web/dashboard/node_modules/
 web/dashboard/*.tsbuildinfo
+deploy/private-exports/
