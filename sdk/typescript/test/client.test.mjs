@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { Publisher, RelayForgeError } from "../src/index.ts";
+import { Publisher, RelayForgeError } from "../dist/index.js";
 
 test("publisher retries with one idempotency key", async () => {
   const keys = [];

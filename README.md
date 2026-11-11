@@ -40,7 +40,7 @@ Trace context follows an accepted event through PostgreSQL into its outbox dispa
 
 ## Advanced features
 
-- **Publisher SDKs:** Go and TypeScript clients publish events with stable idempotency keys across bounded retries.
+- **Publisher SDKs:** Go and TypeScript clients publish events with stable idempotency keys across bounded retries. Use the TypeScript client only in trusted server code; API keys must not be bundled into a browser.
 - **Scheduled events:** `POST /v1/events` accepts an optional `deliver_at` time within the next 30 days. The outbox waits until that time before creating deliveries.
 - **Endpoint verification:** Set `verification_required` when creating an endpoint, then call `POST /v1/endpoints/{id}/verify`. The receiver must echo the `Webhook-Verification-Challenge` header as `Webhook-Verification-Response` on an HTTP 200 response. Changing the endpoint URL clears verification.
 - **Delivery analytics:** `GET /v1/analytics/deliveries?window=24h|7d|30d` returns tenant-scoped hourly attempt counts and p50/p95 duration.
