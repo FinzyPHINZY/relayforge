@@ -1,0 +1,47 @@
+# Read-only regional standby. REPLICA_DATABASE_URL must point to an externally
+# replicated PostgreSQL standby. Do not run migrations or workers here.
+services:
+  api:
+    build:
+      context: ..
+      args: {TARGET: api}
+    environment:
+      DATABASE_URL: ${REPLICA_DATABASE_URL:?Set replica database URL}
+      ENCRYPTION_KEY_BASE64: ${ENCRYPTION_KEY_BASE64:?Set encryption key}
+      ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:?Set encryption key ID}
+      REGION_ROLE: standby
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/health/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+  dashboard:
+    build:
+      context: ../web/dashboard
+    environment:
+      RELAYFORGE_API_URL: http://api:8080
+      DASHBOARD_SESSION_KEY: ${DASHBOARD_SESSION_KEY:?Set dashboard session key}
+      DASHBOARD_SECURE_COOKIES: "true"
+    depends_on:
+      api: {condition: service_healthy}
+    restart: unless-stopped
+  caddy:
+    image: caddy:2-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      RELAYFORGE_DASHBOARD_DOMAIN: ${RELAYFORGE_DASHBOARD_DOMAIN:?Set standby dashboard domain}
+      RELAYFORGE_API_DOMAIN: ${RELAYFORGE_API_DOMAIN:?Set standby API domain}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      dashboard: {condition: service_started}
+    restart: unless-stopped
+volumes:
+  caddy_data:
+  caddy_config:
