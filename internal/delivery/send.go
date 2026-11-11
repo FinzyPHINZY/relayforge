@@ -54,12 +54,16 @@ func (s Sender) Send(ctx context.Context, c Claimed) Result {
 	if err != nil || tag.RowsAffected() != 1 {
 		return Result{Outcome: "unknown", ErrorCode: "stale_lease", Duration: time.Since(started)}
 	}
+	transformed, err := TransformData(c.Payload, c.FieldMap)
+	if err != nil {
+		return Result{Outcome: "network_error", ErrorCode: "invalid_transform", Retryable: false, Duration: time.Since(started)}
+	}
 	body, err := json.Marshal(struct {
 		ID        string          `json:"id"`
 		Type      string          `json:"type"`
 		CreatedAt string          `json:"created_at"`
 		Data      json.RawMessage `json:"data"`
-	}{c.EventID, c.EventType, c.EventCreatedAt.UTC().Format(time.RFC3339Nano), json.RawMessage(c.Payload)})
+	}{c.EventID, c.EventType, c.EventCreatedAt.UTC().Format(time.RFC3339Nano), json.RawMessage(transformed)})
 	if err != nil {
 		return Result{Outcome: "network_error", ErrorCode: "serialization_error", Retryable: true, Duration: time.Since(started)}
 	}

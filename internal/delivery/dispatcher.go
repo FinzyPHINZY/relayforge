@@ -49,7 +49,7 @@ func DispatchBatch(ctx context.Context, pool *pgxpool.Pool, limit int) (int, err
 			parent = *item.traceparent
 		}
 		itemCtx, span := otel.Tracer("relayforge/dispatcher").Start(observability.ContextWithTraceParent(ctx, parent), "outbox.dispatch")
-		_, err = tx.Exec(itemCtx, `INSERT INTO deliveries (id,organization_id,event_id,endpoint_id,destination_url,timeout_ms,max_attempts,traceparent) SELECT gen_random_uuid(),e.organization_id,$2,e.id,e.url,e.timeout_ms,e.max_attempts,$4 FROM endpoints e WHERE e.organization_id=$1 AND e.status='active' AND (NOT e.verification_required OR e.verified_at IS NOT NULL) AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.endpoint_id=e.id AND s.organization_id=e.organization_id AND s.event_type IN ($3,'*')) ON CONFLICT (event_id,endpoint_id,run_number) DO NOTHING`, item.organizationID, item.eventID, item.eventType, observability.TraceParent(itemCtx))
+		_, err = tx.Exec(itemCtx, `INSERT INTO deliveries (id,organization_id,event_id,endpoint_id,destination_url,timeout_ms,max_attempts,traceparent,field_map) SELECT gen_random_uuid(),e.organization_id,$2,e.id,e.url,e.timeout_ms,e.max_attempts,$4,e.field_map FROM endpoints e WHERE e.organization_id=$1 AND e.status='active' AND (NOT e.verification_required OR e.verified_at IS NOT NULL) AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.endpoint_id=e.id AND s.organization_id=e.organization_id AND s.event_type IN ($3,'*')) ON CONFLICT (event_id,endpoint_id,run_number) DO NOTHING`, item.organizationID, item.eventID, item.eventType, observability.TraceParent(itemCtx))
 		if err != nil {
 			span.End()
 			return 0, err

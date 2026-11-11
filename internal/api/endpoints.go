@@ -7,42 +7,46 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5"
+	"webhook_delivery/internal/delivery"
 	"webhook_delivery/internal/id"
 	"webhook_delivery/internal/security"
 )
 
 type endpointInput struct {
-	URL                  string   `json:"url"`
-	Description          string   `json:"description"`
-	EventTypes           []string `json:"event_types"`
-	TimeoutMS            int      `json:"timeout_ms"`
-	MaxAttempts          int      `json:"max_attempts"`
-	VerificationRequired bool     `json:"verification_required"`
+	URL                  string            `json:"url"`
+	Description          string            `json:"description"`
+	EventTypes           []string          `json:"event_types"`
+	TimeoutMS            int               `json:"timeout_ms"`
+	MaxAttempts          int               `json:"max_attempts"`
+	VerificationRequired bool              `json:"verification_required"`
+	FieldMap             map[string]string `json:"field_map"`
 }
 type endpointPatch struct {
-	URL         *string   `json:"url"`
-	Description *string   `json:"description"`
-	EventTypes  *[]string `json:"event_types"`
-	Status      *string   `json:"status"`
-	TimeoutMS   *int      `json:"timeout_ms"`
-	MaxAttempts *int      `json:"max_attempts"`
+	URL         *string            `json:"url"`
+	Description *string            `json:"description"`
+	EventTypes  *[]string          `json:"event_types"`
+	Status      *string            `json:"status"`
+	TimeoutMS   *int               `json:"timeout_ms"`
+	MaxAttempts *int               `json:"max_attempts"`
+	FieldMap    *map[string]string `json:"field_map"`
 }
 type endpointView struct {
-	ID                   string           `json:"id"`
-	SigningSecretID      string           `json:"signing_secret_id"`
-	SigningSecrets       []secretMetadata `json:"signing_secrets"`
-	URL                  string           `json:"url"`
-	Description          string           `json:"description"`
-	Status               string           `json:"status"`
-	EventTypes           []string         `json:"event_types"`
-	TimeoutMS            int              `json:"timeout_ms"`
-	MaxAttempts          int              `json:"max_attempts"`
-	CreatedAt            time.Time        `json:"created_at"`
-	UpdatedAt            time.Time        `json:"updated_at"`
-	CircuitStatus        string           `json:"circuit_status"`
-	CircuitOpenUntil     *time.Time       `json:"circuit_open_until,omitempty"`
-	VerificationRequired bool             `json:"verification_required"`
-	VerifiedAt           *time.Time       `json:"verified_at,omitempty"`
+	ID                   string            `json:"id"`
+	SigningSecretID      string            `json:"signing_secret_id"`
+	SigningSecrets       []secretMetadata  `json:"signing_secrets"`
+	URL                  string            `json:"url"`
+	Description          string            `json:"description"`
+	Status               string            `json:"status"`
+	EventTypes           []string          `json:"event_types"`
+	TimeoutMS            int               `json:"timeout_ms"`
+	MaxAttempts          int               `json:"max_attempts"`
+	CreatedAt            time.Time         `json:"created_at"`
+	UpdatedAt            time.Time         `json:"updated_at"`
+	CircuitStatus        string            `json:"circuit_status"`
+	CircuitOpenUntil     *time.Time        `json:"circuit_open_until,omitempty"`
+	VerificationRequired bool              `json:"verification_required"`
+	VerifiedAt           *time.Time        `json:"verified_at,omitempty"`
+	FieldMap             map[string]string `json:"field_map"`
 }
 
 type secretMetadata struct {
@@ -89,6 +93,13 @@ func (s *Server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "invalid_endpoint", "Invalid timeout or retry limit")
 		return
 	}
+	if err := delivery.ValidateFieldMap(in.FieldMap); err != nil {
+		problem(w, 422, "invalid_field_map", err.Error())
+		return
+	}
+	if in.FieldMap == nil {
+		in.FieldMap = map[string]string{}
+	}
 	ctx := r.Context()
 	orgID := tenant(r)
 	tx, err := s.DB.Begin(ctx)
@@ -134,7 +145,7 @@ func (s *Server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var view endpointView
-	err = tx.QueryRow(ctx, `INSERT INTO endpoints (id,organization_id,url,description,timeout_ms,max_attempts,verification_required) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id,url,description,status,timeout_ms,max_attempts,created_at,updated_at`, endpointID, orgID, in.URL, in.Description, in.TimeoutMS, in.MaxAttempts, in.VerificationRequired).Scan(&view.ID, &view.URL, &view.Description, &view.Status, &view.TimeoutMS, &view.MaxAttempts, &view.CreatedAt, &view.UpdatedAt)
+	err = tx.QueryRow(ctx, `INSERT INTO endpoints (id,organization_id,url,description,timeout_ms,max_attempts,verification_required,field_map) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id,url,description,status,timeout_ms,max_attempts,created_at,updated_at`, endpointID, orgID, in.URL, in.Description, in.TimeoutMS, in.MaxAttempts, in.VerificationRequired, in.FieldMap).Scan(&view.ID, &view.URL, &view.Description, &view.Status, &view.TimeoutMS, &view.MaxAttempts, &view.CreatedAt, &view.UpdatedAt)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
@@ -158,6 +169,7 @@ func (s *Server) createEndpoint(w http.ResponseWriter, r *http.Request) {
 	view.EventTypes = in.EventTypes
 	view.CircuitStatus = "closed"
 	view.VerificationRequired = in.VerificationRequired
+	view.FieldMap = in.FieldMap
 	view.SigningSecretID = secretID
 	view.SigningSecrets = []secretMetadata{{ID: secretID, State: "active", CreatedAt: secretCreated}}
 	writeJSON(w, 201, map[string]any{"endpoint": view, "signing_secret": secret, "signing_secret_id": secretID})
@@ -182,7 +194,7 @@ func (s *Server) getEndpoint(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) loadEndpoint(r *http.Request, endpointID string) (endpointView, error) {
 	var v endpointView
-	err := s.DB.QueryRow(r.Context(), `SELECT e.id,e.url,e.description,e.status,e.timeout_ms,e.max_attempts,e.created_at,e.updated_at,(SELECT s.id FROM endpoint_secrets s WHERE s.endpoint_id=e.id AND s.state='active'),CASE WHEN ec.open_until IS NULL THEN 'closed' WHEN ec.probe_delivery_id IS NOT NULL OR ec.open_until<=now() THEN 'half_open' ELSE 'open' END,ec.open_until,e.verification_required,e.verified_at FROM endpoints e JOIN endpoint_circuits ec ON ec.endpoint_id=e.id AND ec.organization_id=e.organization_id WHERE e.id=$1 AND e.organization_id=$2`, endpointID, tenant(r)).Scan(&v.ID, &v.URL, &v.Description, &v.Status, &v.TimeoutMS, &v.MaxAttempts, &v.CreatedAt, &v.UpdatedAt, &v.SigningSecretID, &v.CircuitStatus, &v.CircuitOpenUntil, &v.VerificationRequired, &v.VerifiedAt)
+	err := s.DB.QueryRow(r.Context(), `SELECT e.id,e.url,e.description,e.status,e.timeout_ms,e.max_attempts,e.created_at,e.updated_at,(SELECT s.id FROM endpoint_secrets s WHERE s.endpoint_id=e.id AND s.state='active'),CASE WHEN ec.open_until IS NULL THEN 'closed' WHEN ec.probe_delivery_id IS NOT NULL OR ec.open_until<=now() THEN 'half_open' ELSE 'open' END,ec.open_until,e.verification_required,e.verified_at,e.field_map FROM endpoints e JOIN endpoint_circuits ec ON ec.endpoint_id=e.id AND ec.organization_id=e.organization_id WHERE e.id=$1 AND e.organization_id=$2`, endpointID, tenant(r)).Scan(&v.ID, &v.URL, &v.Description, &v.Status, &v.TimeoutMS, &v.MaxAttempts, &v.CreatedAt, &v.UpdatedAt, &v.SigningSecretID, &v.CircuitStatus, &v.CircuitOpenUntil, &v.VerificationRequired, &v.VerifiedAt, &v.FieldMap)
 	if err != nil {
 		return v, err
 	}
@@ -305,6 +317,12 @@ func (s *Server) patchEndpoint(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "invalid_endpoint", "Invalid subscriptions")
 		return
 	}
+	if in.FieldMap != nil {
+		if err := delivery.ValidateFieldMap(*in.FieldMap); err != nil {
+			problem(w, 422, "invalid_field_map", err.Error())
+			return
+		}
+	}
 	ctx := r.Context()
 	orgID := tenant(r)
 	endpointID := chi.URLParam(r, "id")
@@ -328,7 +346,7 @@ func (s *Server) patchEndpoint(w http.ResponseWriter, r *http.Request) {
 		problem(w, 409, "endpoint_disabled", "Disabled endpoint cannot be updated")
 		return
 	}
-	_, err = tx.Exec(ctx, `UPDATE endpoints SET url=COALESCE($3,url),description=COALESCE($4,description),status=COALESCE($5,status),timeout_ms=COALESCE($6,timeout_ms),max_attempts=COALESCE($7,max_attempts),verified_at=CASE WHEN $3::text IS NOT NULL AND $3::text IS DISTINCT FROM url THEN NULL ELSE verified_at END,updated_at=now() WHERE id=$1 AND organization_id=$2`, endpointID, orgID, in.URL, in.Description, in.Status, in.TimeoutMS, in.MaxAttempts)
+	_, err = tx.Exec(ctx, `UPDATE endpoints SET url=COALESCE($3,url),description=COALESCE($4,description),status=COALESCE($5,status),timeout_ms=COALESCE($6,timeout_ms),max_attempts=COALESCE($7,max_attempts),verified_at=CASE WHEN $3::text IS NOT NULL AND $3::text IS DISTINCT FROM url THEN NULL ELSE verified_at END,field_map=COALESCE($8,field_map),updated_at=now() WHERE id=$1 AND organization_id=$2`, endpointID, orgID, in.URL, in.Description, in.Status, in.TimeoutMS, in.MaxAttempts, in.FieldMap)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
