@@ -1,0 +1,1 @@
+DROP INDEX delivery_attempts_org_started_idx;

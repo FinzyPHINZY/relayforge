@@ -18,7 +18,7 @@ func main() {
 	name := flag.String("org", "", "organization name")
 	existingOrgID := flag.String("org-id", "", "issue a key for an existing organization")
 	keyName := flag.String("key-name", "bootstrap", "API key name")
-	scopeArg := flag.String("scopes", "events:write,events:read,endpoints:write,endpoints:read,deliveries:read,deliveries:write,metrics:read", "comma-separated scopes")
+	scopeArg := flag.String("scopes", "events:write,events:read,endpoints:write,endpoints:read,deliveries:read,deliveries:write,metrics:read,team:read,team:write", "comma-separated scopes")
 	flag.Parse()
 	if (*existingOrgID == "") == (strings.TrimSpace(*name) == "") {
 		log.Fatal("provide exactly one of -org or -org-id")
@@ -52,7 +52,7 @@ func main() {
 		log.Fatal(err)
 	}
 	scopes := strings.Split(*scopeArg, ",")
-	allowed := map[string]bool{"events:write": true, "events:read": true, "endpoints:write": true, "endpoints:read": true, "deliveries:read": true, "deliveries:write": true, "metrics:read": true}
+	allowed := map[string]bool{"events:write": true, "events:read": true, "endpoints:write": true, "endpoints:read": true, "deliveries:read": true, "deliveries:write": true, "metrics:read": true, "team:read": true, "team:write": true}
 	for _, s := range scopes {
 		if !allowed[s] {
 			log.Fatalf("invalid scope: %q", s)

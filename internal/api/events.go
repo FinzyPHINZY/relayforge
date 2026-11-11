@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -20,8 +21,9 @@ import (
 var eventTypePattern = regexp.MustCompile(`^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$`)
 
 type eventInput struct {
-	Type string          `json:"type"`
-	Data json.RawMessage `json:"data"`
+	Type      string          `json:"type"`
+	Data      json.RawMessage `json:"data"`
+	DeliverAt *time.Time      `json:"deliver_at,omitempty"`
 }
 type eventResponse struct {
 	ID        string    `json:"id"`
@@ -35,7 +37,7 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input, 270*1024) {
 		return
 	}
-	if len(input.Type) > 128 || !eventTypePattern.MatchString(input.Type) {
+	if len(input.Type) > 128 || !eventTypePattern.MatchString(input.Type) || strings.HasPrefix(input.Type, "relayforge.") {
 		problem(w, 422, "invalid_event", "Invalid event type")
 		return
 	}
@@ -70,6 +72,9 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(ctx)
 	fp := fingerprint(input.Type, canonical)
+	if input.DeliverAt != nil {
+		fp = fingerprint(input.Type+"\x00"+input.DeliverAt.UTC().Format(time.RFC3339Nano), canonical)
+	}
 	if key != "" {
 		// The advisory lock serializes matching keys before either request changes usage.
 		_, err = tx.Exec(ctx, `SELECT pg_advisory_xact_lock(hashtextextended($1, 0))`, orgID+":"+key)
@@ -91,6 +96,13 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			problem(w, 503, "storage_unavailable", "Storage unavailable")
+			return
+		}
+	}
+	if input.DeliverAt != nil {
+		now := time.Now().UTC()
+		if !input.DeliverAt.After(now) || input.DeliverAt.After(now.Add(30*24*time.Hour)) {
+			problem(w, 422, "invalid_schedule", "deliver_at must be in the next 30 days")
 			return
 		}
 	}
@@ -127,7 +139,11 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
-	_, err = tx.Exec(ctx, `INSERT INTO outbox (id,organization_id,event_id) VALUES ($1,$2,$3)`, outboxID, orgID, eventID)
+	availableAt := time.Now().UTC()
+	if input.DeliverAt != nil {
+		availableAt = input.DeliverAt.UTC()
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO outbox (id,organization_id,event_id,available_at) VALUES ($1,$2,$3,$4)`, outboxID, orgID, eventID, availableAt)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return

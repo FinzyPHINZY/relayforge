@@ -43,6 +43,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       EVENT_RATE_LIMIT_PER_MINUTE: ${EVENT_RATE_LIMIT_PER_MINUTE:-600}
       MANAGEMENT_RATE_LIMIT_PER_MINUTE: ${MANAGEMENT_RATE_LIMIT_PER_MINUTE:-120}
+      REGION_ROLE: ${REGION_ROLE:-primary}
     depends_on:
       migrate: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
@@ -59,6 +60,7 @@ services:
     environment:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
       RETENTION_DAYS: ${RETENTION_DAYS:-30}
+      REGION_ROLE: ${REGION_ROLE:-primary}
     depends_on:
       migrate: {condition: service_completed_successfully}
     healthcheck:
@@ -79,6 +81,7 @@ services:
       ENDPOINT_CONCURRENCY_LIMIT: ${ENDPOINT_CONCURRENCY_LIMIT:-2}
       TENANT_CONCURRENCY_LIMIT: ${TENANT_CONCURRENCY_LIMIT:-10}
       WORKER_DRAIN_SECONDS: ${WORKER_DRAIN_SECONDS:-35}
+      REGION_ROLE: ${REGION_ROLE:-primary}
     stop_grace_period: 45s
     depends_on:
       migrate: {condition: service_completed_successfully}

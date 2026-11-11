@@ -25,7 +25,7 @@ func DispatchBatch(ctx context.Context, pool *pgxpool.Pool, limit int) (int, err
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT o.id,o.organization_id,o.event_id,e.event_type,e.traceparent FROM outbox o JOIN events e ON e.id=o.event_id AND e.organization_id=o.organization_id JOIN organizations org ON org.id=o.organization_id WHERE o.status='pending' AND org.status='active' ORDER BY o.created_at,o.id FOR UPDATE OF o SKIP LOCKED FOR SHARE OF org LIMIT $1`, limit)
+	rows, err := tx.Query(ctx, `SELECT o.id,o.organization_id,o.event_id,e.event_type,e.traceparent FROM outbox o JOIN events e ON e.id=o.event_id AND e.organization_id=o.organization_id JOIN organizations org ON org.id=o.organization_id WHERE o.status='pending' AND o.available_at<=now() AND org.status='active' ORDER BY o.available_at,o.id FOR UPDATE OF o SKIP LOCKED FOR SHARE OF org LIMIT $1`, limit)
 	if err != nil {
 		return 0, err
 	}
@@ -49,7 +49,7 @@ func DispatchBatch(ctx context.Context, pool *pgxpool.Pool, limit int) (int, err
 			parent = *item.traceparent
 		}
 		itemCtx, span := otel.Tracer("relayforge/dispatcher").Start(observability.ContextWithTraceParent(ctx, parent), "outbox.dispatch")
-		_, err = tx.Exec(itemCtx, `INSERT INTO deliveries (id,organization_id,event_id,endpoint_id,destination_url,timeout_ms,max_attempts,traceparent) SELECT gen_random_uuid(),e.organization_id,$2,e.id,e.url,e.timeout_ms,e.max_attempts,$4 FROM endpoints e WHERE e.organization_id=$1 AND e.status='active' AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.endpoint_id=e.id AND s.organization_id=e.organization_id AND s.event_type IN ($3,'*')) ON CONFLICT (event_id,endpoint_id,run_number) DO NOTHING`, item.organizationID, item.eventID, item.eventType, observability.TraceParent(itemCtx))
+		_, err = tx.Exec(itemCtx, `INSERT INTO deliveries (id,organization_id,event_id,endpoint_id,destination_url,timeout_ms,max_attempts,traceparent,field_map) SELECT gen_random_uuid(),e.organization_id,$2,e.id,e.url,e.timeout_ms,e.max_attempts,$4,e.field_map FROM endpoints e WHERE e.organization_id=$1 AND e.status='active' AND (NOT e.verification_required OR e.verified_at IS NOT NULL) AND EXISTS (SELECT 1 FROM subscriptions s WHERE s.endpoint_id=e.id AND s.organization_id=e.organization_id AND s.event_type IN ($3,'*')) ON CONFLICT (event_id,endpoint_id,run_number) DO NOTHING`, item.organizationID, item.eventID, item.eventType, observability.TraceParent(itemCtx))
 		if err != nil {
 			span.End()
 			return 0, err

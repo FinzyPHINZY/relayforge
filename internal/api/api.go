@@ -32,6 +32,8 @@ type Server struct {
 	EncryptionKey                       []byte
 	EncryptionKeyID                     string
 	DemoReceiverOrigin                  string
+	AllowHTTPTest                       bool
+	RegionRole                          string
 	EventRateLimit, ManagementRateLimit int
 	limitMu                             sync.Mutex
 	limitEntries                        map[string]rateEntry
@@ -41,6 +43,7 @@ type Server struct {
 type principal struct {
 	KeyID  string
 	OrgID  string
+	Role   string
 	Scopes map[string]bool
 }
 type contextKey int
@@ -53,6 +56,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/health/ready", s.ready)
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(s.authenticate)
+		r.Use(s.regionWrites)
 		r.Use(s.rateLimit)
 		r.With(require("events:write")).Post("/events", s.createEvent)
 		r.With(require("events:read")).Get("/events", s.listEvents)
@@ -63,13 +67,30 @@ func (s *Server) Router() http.Handler {
 		r.With(require("endpoints:write")).Patch("/endpoints/{id}", s.patchEndpoint)
 		r.With(require("endpoints:write")).Delete("/endpoints/{id}", s.deleteEndpoint)
 		r.With(require("endpoints:write")).Post("/endpoints/{id}/rotate-secret", s.rotateEndpointSecret)
+		r.With(require("endpoints:write")).Post("/endpoints/{id}/verify", s.verifyEndpoint)
 		r.With(require("deliveries:read")).Get("/deliveries", s.listDeliveries)
 		r.With(require("deliveries:read")).Get("/deliveries/{id}", s.getDelivery)
 		r.With(require("deliveries:write")).Post("/deliveries/{id}/replay", s.replayDelivery)
 		r.With(require("deliveries:write")).Patch("/deliveries/{id}/review", s.reviewDelivery)
 		r.With(require("metrics:read")).Get("/metrics/summary", s.metricsSummary)
+		r.With(require("metrics:read")).Get("/analytics/deliveries", s.deliveryAnalytics)
+		r.With(require("team:read")).Get("/team/members", s.listTeamMembers)
+		r.With(require("team:write")).Post("/team/members", s.createTeamMember)
+		r.With(require("team:write")).Patch("/team/members/{id}", s.patchTeamMember)
 	})
 	return otelhttp.NewHandler(r, "http.server")
+}
+
+// A standby can serve authenticated reads from its database replica, but it
+// must never accept writes before an operator completes fenced promotion.
+func (s *Server) regionWrites(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.RegionRole == "standby" && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			problem(w, 503, "standby_region", "Writes are unavailable in this region")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {
@@ -101,7 +122,8 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		var hash []byte
 		var orgID, keyID string
 		var scopes []string
-		err = s.DB.QueryRow(r.Context(), `SELECT k.id,k.key_hash, k.organization_id, k.scopes FROM api_keys k JOIN organizations o ON o.id=k.organization_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND o.status='active'`, prefix).Scan(&keyID, &hash, &orgID, &scopes)
+		var role string
+		err = s.DB.QueryRow(r.Context(), `SELECT k.id,k.key_hash,k.organization_id,k.scopes,COALESCE(m.role,'owner') FROM api_keys k JOIN organizations o ON o.id=k.organization_id LEFT JOIN team_members m ON m.id=k.member_id AND m.organization_id=k.organization_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND o.status='active' AND (m.id IS NULL OR m.status='active')`, prefix).Scan(&keyID, &hash, &orgID, &scopes, &role)
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem(w, 401, "unauthorized", "Invalid API key")
 			return
@@ -116,9 +138,9 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		}
 		set := make(map[string]bool, len(scopes))
 		for _, scope := range scopes {
-			set[scope] = true
+			set[scope] = roleAllows(role, scope)
 		}
-		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, principal{KeyID: keyID, OrgID: orgID, Scopes: set})))
+		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, principal{KeyID: keyID, OrgID: orgID, Role: role, Scopes: set})))
 	})
 }
 
