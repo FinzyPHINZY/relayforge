@@ -15,8 +15,10 @@ import (
 
 func roleAllows(role, scope string) bool {
 	switch role {
-	case "owner", "admin":
+	case "owner":
 		return true
+	case "admin":
+		return scope != "team:write"
 	case "operator":
 		return scope != "team:write"
 	case "viewer":
