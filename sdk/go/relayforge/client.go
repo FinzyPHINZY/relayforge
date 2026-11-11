@@ -81,6 +81,20 @@ func (e *APIError) Error() string {
 // Publish uses a stable idempotency key for every attempt. Pass an existing
 // key when retrying a call after the process exits or its result is unknown.
 func (c *Client) Publish(ctx context.Context, eventType string, data any, idempotencyKey string) (Event, error) {
+	return c.publish(ctx, eventType, data, nil, idempotencyKey)
+}
+
+// PublishAt schedules an event. Keep the same key and timestamp if retrying
+// after a process restart or an uncertain response.
+func (c *Client) PublishAt(ctx context.Context, eventType string, data any, deliverAt time.Time, idempotencyKey string) (Event, error) {
+	if deliverAt.IsZero() {
+		return Event{}, errors.New("delivery time required")
+	}
+	utc := deliverAt.UTC()
+	return c.publish(ctx, eventType, data, &utc, idempotencyKey)
+}
+
+func (c *Client) publish(ctx context.Context, eventType string, data any, deliverAt *time.Time, idempotencyKey string) (Event, error) {
 	if eventType == "" {
 		return Event{}, errors.New("event type required")
 	}
@@ -95,9 +109,10 @@ func (c *Client) Publish(ctx context.Context, eventType string, data any, idempo
 		return Event{}, errors.New("idempotency key too long")
 	}
 	body, err := json.Marshal(struct {
-		Type string `json:"type"`
-		Data any    `json:"data"`
-	}{eventType, data})
+		Type      string     `json:"type"`
+		Data      any        `json:"data"`
+		DeliverAt *time.Time `json:"deliver_at,omitempty"`
+	}{eventType, data, deliverAt})
 	if err != nil {
 		return Event{}, err
 	}

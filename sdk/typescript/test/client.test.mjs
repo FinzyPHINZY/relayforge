@@ -28,3 +28,16 @@ test("publisher exposes API problem details without retrying conflicts", async (
   await assert.rejects(client.publish("order.created", { id: 1 }, { idempotencyKey: "same" }), (error) => error instanceof RelayForgeError && error.code === "idempotency_conflict");
   assert.equal(calls, 1);
 });
+
+test("publisher sends the requested schedule", async () => {
+  let body;
+  const client = new Publisher("https://relayforge.example", "whk_test", {
+    fetch: async (_url, init) => {
+      body = JSON.parse(init.body);
+      return Response.json({ id: "scheduled-1", type: "order.created", status: "accepted", created_at: new Date().toISOString() }, { status: 202 });
+    },
+  });
+  const due = new Date("2030-01-01T00:00:00.000Z");
+  await client.publish("order.created", { id: 1 }, { deliverAt: due });
+  assert.equal(body.deliver_at, due.toISOString());
+});

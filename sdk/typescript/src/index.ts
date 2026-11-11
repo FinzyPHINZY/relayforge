@@ -45,11 +45,12 @@ export class Publisher {
 		this.apiKey = apiKey;
   }
 
-  async publish(type: string, data: unknown, options: { idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<AcceptedEvent> {
+  async publish(type: string, data: unknown, options: { idempotencyKey?: string; signal?: AbortSignal; deliverAt?: Date } = {}): Promise<AcceptedEvent> {
     if (!type) throw new Error("Event type required");
     const key = options.idempotencyKey ?? crypto.randomUUID();
     if (!key || key.length > 255) throw new Error("Invalid idempotency key");
-    const body = JSON.stringify({ type, data });
+    if (options.deliverAt && !Number.isFinite(options.deliverAt.getTime())) throw new Error("Invalid delivery time");
+    const body = JSON.stringify({ type, data, ...(options.deliverAt ? { deliver_at: options.deliverAt.toISOString() } : {}) });
     if (body === undefined || new TextEncoder().encode(body).length > 270 * 1024) throw new Error("Event body too large");
     const endpoint = new URL("v1/events", this.base);
     let lastError: unknown;
