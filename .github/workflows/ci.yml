@@ -55,6 +55,10 @@ jobs:
           pnpm test
           pnpm typecheck
           pnpm build
+      - name: Verify TypeScript publisher SDK
+        run: |
+          web/dashboard/node_modules/.bin/tsc --noEmit -p sdk/typescript/tsconfig.json
+          node --experimental-strip-types sdk/typescript/test/client.test.mjs
       - name: Start Compose services
         run: |
           docker compose --profile demo --profile dashboard up --build -d

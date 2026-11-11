@@ -6,9 +6,13 @@ export interface AcceptedEvent {
 }
 
 export class RelayForgeError extends Error {
-  constructor(public readonly status: number, public readonly code: string, detail: string) {
+	readonly status: number;
+	readonly code: string;
+  constructor(status: number, code: string, detail: string) {
     super(detail);
     this.name = "RelayForgeError";
+		this.status = status;
+		this.code = code;
   }
 }
 
@@ -21,8 +25,9 @@ export class Publisher {
   private readonly base: URL;
   private readonly request: typeof fetch;
   private readonly retries: number;
+	private readonly apiKey: string;
 
-  constructor(baseURL: string, private readonly apiKey: string, options: PublisherOptions = {}) {
+  constructor(baseURL: string, apiKey: string, options: PublisherOptions = {}) {
     const parsed = new URL(baseURL);
     if (!(["https:", "http:"].includes(parsed.protocol)) || parsed.username || parsed.password || parsed.search || parsed.hash) {
       throw new Error("Invalid RelayForge URL");
@@ -37,6 +42,7 @@ export class Publisher {
     this.base = parsed;
     this.request = options.fetch ?? fetch;
     this.retries = retries;
+		this.apiKey = apiKey;
   }
 
   async publish(type: string, data: unknown, options: { idempotencyKey?: string; signal?: AbortSignal } = {}): Promise<AcceptedEvent> {
