@@ -63,6 +63,7 @@ func (s *Server) Router() http.Handler {
 		r.With(require("endpoints:write")).Patch("/endpoints/{id}", s.patchEndpoint)
 		r.With(require("endpoints:write")).Delete("/endpoints/{id}", s.deleteEndpoint)
 		r.With(require("endpoints:write")).Post("/endpoints/{id}/rotate-secret", s.rotateEndpointSecret)
+		r.With(require("endpoints:write")).Post("/endpoints/{id}/verify", s.verifyEndpoint)
 		r.With(require("deliveries:read")).Get("/deliveries", s.listDeliveries)
 		r.With(require("deliveries:read")).Get("/deliveries/{id}", s.getDelivery)
 		r.With(require("deliveries:write")).Post("/deliveries/{id}/replay", s.replayDelivery)

@@ -45,7 +45,7 @@ func setupWithContainer(t testing.TB) (*pgxpool.Pool, *httptest.Server, *postgre
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("PostgreSQL did not accept a connection after readiness: %v", err)
 	}
-	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql", "../../db/migrations/000003_recovery.up.sql", "../../db/migrations/000004_retention.up.sql", "../../db/migrations/000005_endpoint_circuits.up.sql", "../../db/migrations/000006_delivery_reviews.up.sql", "../../db/migrations/000007_fair_claims.up.sql", "../../db/migrations/000008_trace_context.up.sql", "../../db/migrations/000009_scheduled_events.up.sql"} {
+	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql", "../../db/migrations/000003_recovery.up.sql", "../../db/migrations/000004_retention.up.sql", "../../db/migrations/000005_endpoint_circuits.up.sql", "../../db/migrations/000006_delivery_reviews.up.sql", "../../db/migrations/000007_fair_claims.up.sql", "../../db/migrations/000008_trace_context.up.sql", "../../db/migrations/000009_scheduled_events.up.sql", "../../db/migrations/000010_endpoint_verification.up.sql"} {
 		schema, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -54,7 +54,7 @@ func setupWithContainer(t testing.TB) (*pgxpool.Pool, *httptest.Server, *postgre
 			t.Fatal(err)
 		}
 	}
-	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY); INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9)`, pgx.QueryExecModeSimpleProtocol); err != nil {
+	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY); INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10)`, pgx.QueryExecModeSimpleProtocol); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer((&api.Server{DB: pool, EncryptionKey: bytes.Repeat([]byte{1}, 32), EncryptionKeyID: "test"}).Router())
