@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -36,7 +37,7 @@ func (s *Server) createEvent(w http.ResponseWriter, r *http.Request) {
 	if !decode(w, r, &input, 270*1024) {
 		return
 	}
-	if len(input.Type) > 128 || !eventTypePattern.MatchString(input.Type) {
+	if len(input.Type) > 128 || !eventTypePattern.MatchString(input.Type) || strings.HasPrefix(input.Type, "relayforge.") {
 		problem(w, 422, "invalid_event", "Invalid event type")
 		return
 	}

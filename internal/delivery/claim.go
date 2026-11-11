@@ -105,17 +105,17 @@ func ReclaimExpired(ctx context.Context, pool *pgxpool.Pool, limit int) (int, er
 	}
 	defer tx.Rollback(ctx)
 	type expired struct {
-		id, org, endpoint string
-		attempt, max      int
+		id, org, endpoint, eventID, eventType string
+		attempt, max                          int
 	}
-	rows, err := tx.Query(ctx, `SELECT id,organization_id,endpoint_id,attempt_count,max_attempts FROM deliveries WHERE status='processing' AND lease_expires_at<=now() ORDER BY lease_expires_at,id FOR UPDATE SKIP LOCKED LIMIT $1`, limit)
+	rows, err := tx.Query(ctx, `SELECT d.id,d.organization_id,d.endpoint_id,d.event_id,e.event_type,d.attempt_count,d.max_attempts FROM deliveries d JOIN events e ON e.id=d.event_id AND e.organization_id=d.organization_id WHERE d.status='processing' AND d.lease_expires_at<=now() ORDER BY d.lease_expires_at,d.id FOR UPDATE OF d SKIP LOCKED LIMIT $1`, limit)
 	if err != nil {
 		return 0, err
 	}
 	items := make([]expired, 0, limit)
 	for rows.Next() {
 		var x expired
-		if err = rows.Scan(&x.id, &x.org, &x.endpoint, &x.attempt, &x.max); err != nil {
+		if err = rows.Scan(&x.id, &x.org, &x.endpoint, &x.eventID, &x.eventType, &x.attempt, &x.max); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -152,6 +152,11 @@ func ReclaimExpired(ctx context.Context, pool *pgxpool.Pool, limit int) (int, er
 		_, err = tx.Exec(ctx, `UPDATE deliveries SET status=$2,lease_owner=NULL,lease_expires_at=NULL,lease_generation=lease_generation+1,next_attempt_at=now(),last_error_code='lease_expired',completed_at=CASE WHEN $2='exhausted' THEN now() ELSE NULL END,updated_at=now() WHERE id=$1`, x.id, status)
 		if err != nil {
 			return 0, err
+		}
+		if status == "exhausted" {
+			if err := enqueueExhaustedAlert(ctx, tx, x.org, x.id, x.endpoint, x.eventID, x.eventType, "lease_expired", 0); err != nil {
+				return 0, err
+			}
 		}
 	}
 	if err = tx.Commit(ctx); err != nil {

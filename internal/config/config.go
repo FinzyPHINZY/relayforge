@@ -12,6 +12,7 @@ type Config struct {
 	EncryptionKey                                      []byte
 	EventRateLimit, ManagementRateLimit                int
 	DemoReceiverOrigin                                 string
+	RegionRole                                         string
 }
 
 func Load() (Config, error) {
@@ -39,6 +40,13 @@ func Load() (Config, error) {
 		return c, err
 	}
 	c.DemoReceiverOrigin = os.Getenv("DEMO_RECEIVER_ORIGIN")
+	c.RegionRole = os.Getenv("REGION_ROLE")
+	if c.RegionRole == "" {
+		c.RegionRole = "primary"
+	}
+	if c.RegionRole != "primary" && c.RegionRole != "standby" {
+		return c, errors.New("REGION_ROLE must be primary or standby")
+	}
 	if c.DemoReceiverOrigin != "" && c.DemoReceiverOrigin != "http://receiver:8090" {
 		return c, errors.New("DEMO_RECEIVER_ORIGIN must be http://receiver:8090 or empty")
 	}

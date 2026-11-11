@@ -77,6 +77,11 @@ func Complete(ctx context.Context, pool *pgxpool.Pool, c Claimed, r Result) (boo
 	if err != nil {
 		return false, err
 	}
+	if status == "exhausted" {
+		if err := enqueueExhaustedAlert(ctx, tx, c.OrganizationID, c.ID, c.EndpointID, c.EventID, c.EventType, r.ErrorCode, r.HTTPStatus); err != nil {
+			return false, err
+		}
+	}
 	if err = tx.Commit(ctx); err != nil {
 		return false, err
 	}

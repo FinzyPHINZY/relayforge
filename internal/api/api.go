@@ -33,6 +33,7 @@ type Server struct {
 	EncryptionKeyID                     string
 	DemoReceiverOrigin                  string
 	AllowHTTPTest                       bool
+	RegionRole                          string
 	EventRateLimit, ManagementRateLimit int
 	limitMu                             sync.Mutex
 	limitEntries                        map[string]rateEntry
@@ -55,6 +56,7 @@ func (s *Server) Router() http.Handler {
 	r.Get("/health/ready", s.ready)
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(s.authenticate)
+		r.Use(s.regionWrites)
 		r.Use(s.rateLimit)
 		r.With(require("events:write")).Post("/events", s.createEvent)
 		r.With(require("events:read")).Get("/events", s.listEvents)
@@ -77,6 +79,18 @@ func (s *Server) Router() http.Handler {
 		r.With(require("team:write")).Patch("/team/members/{id}", s.patchTeamMember)
 	})
 	return otelhttp.NewHandler(r, "http.server")
+}
+
+// A standby can serve authenticated reads from its database replica, but it
+// must never accept writes before an operator completes fenced promotion.
+func (s *Server) regionWrites(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.RegionRole == "standby" && r.Method != http.MethodGet && r.Method != http.MethodHead {
+			problem(w, 503, "standby_region", "Writes are unavailable in this region")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func (s *Server) ready(w http.ResponseWriter, r *http.Request) {

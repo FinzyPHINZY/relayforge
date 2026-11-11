@@ -38,6 +38,11 @@ func main() {
 		os.Exit(1)
 	}
 	go health.Serve(ctx, pool, ":8081")
+	if cfg.RegionRole == "standby" {
+		slog.Info("standby region: worker is idle")
+		<-ctx.Done()
+		return
+	}
 	workerID, err := id.New()
 	if err != nil {
 		slog.Error("ID generation failed", "error", err)

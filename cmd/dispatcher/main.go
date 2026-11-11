@@ -32,6 +32,16 @@ func main() {
 		os.Exit(1)
 	}
 	go health.Serve(ctx, pool, ":8081")
+	role := os.Getenv("REGION_ROLE")
+	if role == "standby" {
+		slog.Info("standby region: dispatcher is idle")
+		<-ctx.Done()
+		return
+	}
+	if role != "" && role != "primary" {
+		slog.Error("invalid REGION_ROLE")
+		os.Exit(1)
+	}
 	go retireExpiredSecrets(ctx, pool)
 	days := 30
 	if raw := os.Getenv("RETENTION_DAYS"); raw != "" {

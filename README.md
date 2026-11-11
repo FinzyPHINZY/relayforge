@@ -38,6 +38,17 @@ The backend uses Go, Chi, pgx, and sqlc, with OpenTelemetry trace spans and data
 
 Trace context follows an accepted event through PostgreSQL into its outbox dispatch, delivery claim, and HTTP attempt. The services log spans with a shared trace ID; the trace identifier is not included in public API responses or webhook requests.
 
+## Advanced features
+
+- **Publisher SDKs:** Go and TypeScript clients publish events with stable idempotency keys across bounded retries.
+- **Scheduled events:** `POST /v1/events` accepts an optional `deliver_at` time within the next 30 days. The outbox waits until that time before creating deliveries.
+- **Endpoint verification:** Set `verification_required` when creating an endpoint, then call `POST /v1/endpoints/{id}/verify`. The receiver must echo the `Webhook-Verification-Challenge` header as `Webhook-Verification-Response` on an HTTP 200 response. Changing the endpoint URL clears verification.
+- **Delivery analytics:** `GET /v1/analytics/deliveries?window=24h|7d|30d` returns tenant-scoped hourly attempt counts and p50/p95 duration.
+- **Team roles:** Owners can issue a personal API key for an admin, operator, or viewer through `/v1/team/members`. Each request checks the member's current role and status; suspending a member stops key access.
+- **Payload transformations:** An endpoint `field_map` selects and renames top-level event data fields. Each delivery snapshots the map, so retries send the same signed body. No arbitrary code or external lookups run in workers.
+- **Alert webhooks:** Subscribe an endpoint to `relayforge.delivery.exhausted` to receive a signed alert event when another delivery exhausts its attempts. The alert contains IDs and failure metadata, not the original payload. Alert delivery failure does not create another alert.
+- **Regional standby:** With `REGION_ROLE=standby`, the API serves reads but rejects writes, and the dispatcher and worker remain idle. PostgreSQL replication and promotion are external operations; fence the old primary before promoting a standby. This is a single-writer design, not active-active replication.
+
 ## Security and recovery design
 
 The v1 design limits payloads to 256 KiB, defaults to eight total delivery attempts, uses exponential backoff with jitter, and reclaims expired worker leases. Terminal delivery history is preserved; manual replay creates a new delivery run. Endpoint URLs must use HTTPS, and each outbound connection must recheck DNS and the actual destination IP to block private and metadata addresses. Redirects are disabled. API keys are hashed, signing secrets are encrypted at rest, and ordinary logs exclude raw credentials and payloads.

@@ -55,7 +55,7 @@ func main() {
 	} else {
 		go health.Serve(healthCtx, pool, ":8081", limiter.Ping)
 	}
-	srv := &http.Server{Addr: cfg.ListenAddr, Handler: (&api.Server{DB: pool, DistributedLimiter: distributedLimiter, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, EventRateLimit: cfg.EventRateLimit, ManagementRateLimit: cfg.ManagementRateLimit, DemoReceiverOrigin: cfg.DemoReceiverOrigin}).Router(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 * 1024}
+	srv := &http.Server{Addr: cfg.ListenAddr, Handler: (&api.Server{DB: pool, DistributedLimiter: distributedLimiter, EncryptionKey: cfg.EncryptionKey, EncryptionKeyID: cfg.EncryptionKeyID, EventRateLimit: cfg.EventRateLimit, ManagementRateLimit: cfg.ManagementRateLimit, DemoReceiverOrigin: cfg.DemoReceiverOrigin, RegionRole: cfg.RegionRole}).Router(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 * 1024}
 	go func() {
 		slog.Info("API listening", "addr", cfg.ListenAddr)
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
