@@ -46,4 +46,18 @@ func TestExhaustedDeliveryCreatesOneAlertEvent(t *testing.T) {
 	if err != nil || alertClaim == nil || alertClaim.EventType != "relayforge.delivery.exhausted" {
 		t.Fatalf("alert claim=%+v err=%v", alertClaim, err)
 	}
+	alertResult := testSender(pool).Send(ctx, *alertClaim)
+	if alertResult.Outcome != "success" {
+		t.Fatalf("alert send=%+v", alertResult)
+	}
+	if applied, err := delivery.Complete(ctx, pool, *alertClaim, alertResult); err != nil || !applied {
+		t.Fatalf("alert complete=%v err=%v", applied, err)
+	}
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM events WHERE organization_id=$1 AND event_type='relayforge.delivery.exhausted'`, org).Scan(&count); err != nil || count != 1 {
+		t.Fatalf("recursive alerts=%d err=%v", count, err)
+	}
+	resp, body := request(t, "POST", server.URL+"/v1/events", key, `{"type":"relayforge.delivery.exhausted","data":{"fake":true}}`)
+	if resp.StatusCode != 422 {
+		t.Fatalf("reserved type status=%d body=%s", resp.StatusCode, body)
+	}
 }
