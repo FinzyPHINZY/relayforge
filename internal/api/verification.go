@@ -40,7 +40,7 @@ func (s *Server) verifyEndpoint(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
 	defer cancel()
-	client, err := security.PinnedClientWithDemo(ctx, destination, 5*time.Second, false, s.DemoReceiverOrigin)
+	client, err := security.PinnedClientWithDemo(ctx, destination, 5*time.Second, s.AllowHTTPTest, s.DemoReceiverOrigin)
 	if err != nil {
 		problem(w, 422, "destination_blocked", "Destination cannot be verified")
 		return

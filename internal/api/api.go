@@ -32,6 +32,7 @@ type Server struct {
 	EncryptionKey                       []byte
 	EncryptionKeyID                     string
 	DemoReceiverOrigin                  string
+	AllowHTTPTest                       bool
 	EventRateLimit, ManagementRateLimit int
 	limitMu                             sync.Mutex
 	limitEntries                        map[string]rateEntry
