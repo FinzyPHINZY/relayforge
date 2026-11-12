@@ -69,7 +69,7 @@ export default function LandingPage() {
             <a href="#capabilities">Capabilities</a>
             <a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer">GitHub <ArrowUpRight size={14} aria-hidden="true" /></a>
           </nav>
-          <Link href="/login" className="landing-header-cta">Open console <ArrowUpRight size={16} aria-hidden="true" /></Link>
+          <Link href="/dashboard" className="landing-header-cta">Open console <ArrowUpRight size={16} aria-hidden="true" /></Link>
         </div>
       </header>
 
@@ -80,7 +80,7 @@ export default function LandingPage() {
             <h1 id="landing-heading">Your event happened.<br /><span>Make sure the message gets through.</span></h1>
             <p>RelayForge turns accepted events into signed, observable webhook deliveries. When a receiver goes down, you have retries, recovery, and the full story of what happened.</p>
             <div className="landing-hero-actions">
-              <Link href="/login" className="landing-button landing-button-primary">Open the console <ArrowUpRight size={18} aria-hidden="true" /></Link>
+              <Link href="/dashboard" className="landing-button landing-button-primary">Open the console <ArrowUpRight size={18} aria-hidden="true" /></Link>
               <a href="#how-it-works" className="landing-button landing-button-secondary">See how it works <ArrowDownRight size={17} aria-hidden="true" /></a>
             </div>
             <div className="landing-hero-note"><span className="landing-note-line" /> Built around durable state, at-least-once delivery, and a clear recovery path.</div>
@@ -149,7 +149,7 @@ export default function LandingPage() {
         </section>
 
         <section className="landing-final landing-container" aria-labelledby="final-heading">
-          <div className="landing-final-panel"><div className="landing-final-glow" /><span className="landing-kicker">READY TO EXPLORE?</span><h2 id="final-heading">Build with confidence.<br /><em>Operate with clarity.</em></h2><p>See the delivery pipeline in action, inspect its behavior, and make every webhook accountable.</p><div className="landing-final-actions"><Link href="/login" className="landing-button landing-button-primary">Open the console <ArrowUpRight size={18} aria-hidden="true" /></Link><a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer" className="landing-final-link">View on GitHub <ArrowRight size={17} aria-hidden="true" /></a></div></div>
+          <div className="landing-final-panel"><div className="landing-final-glow" /><span className="landing-kicker">READY TO EXPLORE?</span><h2 id="final-heading">Build with confidence.<br /><em>Operate with clarity.</em></h2><p>See the delivery pipeline in action, inspect its behavior, and make every webhook accountable.</p><div className="landing-final-actions"><Link href="/dashboard" className="landing-button landing-button-primary">Open the console <ArrowUpRight size={18} aria-hidden="true" /></Link><a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer" className="landing-final-link">View on GitHub <ArrowRight size={17} aria-hidden="true" /></a></div></div>
         </section>
       </main>
 
