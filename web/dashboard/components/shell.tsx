@@ -4,7 +4,7 @@ import { signOut } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 
 const navigation = [
-  { href: "/", label: "Overview", icon: Activity },
+  { href: "/dashboard", label: "Overview", icon: Activity },
   { href: "/endpoints", label: "Endpoints", icon: RadioTower },
   { href: "/events", label: "Events", icon: Boxes },
   { href: "/deliveries", label: "Deliveries", icon: Workflow },

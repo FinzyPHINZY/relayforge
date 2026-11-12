@@ -119,7 +119,7 @@ For an exhausted delivery, set the endpoint's `max_attempts` to 1 for a new even
 
 ### Use the operator dashboard
 
-Generate a separate 32-byte dashboard session key with `openssl rand -base64 32` and set `DASHBOARD_SESSION_KEY` in `.env`. Start the dashboard profile with `docker compose --profile demo --profile dashboard up --build -d`, then open `http://localhost:3000/login`. Sign in with the scoped API key printed by `cmd/bootstrap`.
+Generate a separate 32-byte dashboard session key with `openssl rand -base64 32` and set `DASHBOARD_SESSION_KEY` in `.env`. Start the dashboard profile with `docker compose --profile demo --profile dashboard up --build -d`, then open `http://localhost:3000` for the public landing page. Select **Open console** and sign in with the scoped API key printed by `cmd/bootstrap`. The authenticated overview is at `/dashboard`.
 
 The dashboard shows tenant-scoped metrics, endpoints, circuit state, events, deliveries, attempt history, dead-letter reviews, and replay controls. You can register and pause endpoints; a newly created endpoint's signing secret appears once. The browser submits the API key to the dashboard server at sign-in; the server verifies it and stores it in an encrypted HTTP-only cookie for eight hours. Browser code does not call the Go API with the key. Key revocation is enforced on subsequent API requests. The Compose dashboard binds to localhost and permits an HTTP cookie for local use; use TLS and secure cookies when deploying it beyond a local machine.
 
