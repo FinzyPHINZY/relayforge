@@ -19,7 +19,7 @@ export async function signIn(formData: FormData) {
     redirect("/login?error=unavailable");
   }
   await saveSession(key);
-  redirect("/");
+  redirect("/dashboard");
 }
 
 export async function signOut() {

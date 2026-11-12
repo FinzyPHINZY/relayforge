@@ -66,6 +66,8 @@ jobs:
           curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:8090/health/live
       - name: Verify dashboard page
         run: |
+          curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:3000/ -o /tmp/relayforge-landing.html
+          grep -q 'Make sure the message gets through' /tmp/relayforge-landing.html
           curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:3000/login -o /tmp/relayforge-dashboard-login.html
           grep -q 'Sign in to your workspace' /tmp/relayforge-dashboard-login.html
       - name: Verify dashboard sign in
@@ -77,7 +79,7 @@ jobs:
           action_field=$(grep -oE '\$ACTION_ID_[A-Za-z0-9_]+' /tmp/relayforge-dashboard-login.html | sed -n '1p')
           test -n "$action_field"
           curl --retry 10 --retry-all-errors --retry-delay 1 -fsS -c /tmp/relayforge-dashboard-cookies.txt -o /tmp/relayforge-dashboard-auth.html -F "$action_field=" -F "apiKey=$key" -H 'Origin: http://127.0.0.1:3000' http://127.0.0.1:3000/login
-          curl --retry 10 --retry-all-errors --retry-delay 1 -fsS -b /tmp/relayforge-dashboard-cookies.txt http://127.0.0.1:3000/ -o /tmp/relayforge-dashboard-overview.html
+          curl --retry 10 --retry-all-errors --retry-delay 1 -fsS -b /tmp/relayforge-dashboard-cookies.txt http://127.0.0.1:3000/dashboard -o /tmp/relayforge-dashboard-overview.html
           grep -q 'Delivery at a glance' /tmp/relayforge-dashboard-overview.html
       - name: Verify signed demo delivery
         run: |
