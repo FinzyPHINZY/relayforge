@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { apiJson, ApiError, requireKey } from "@/lib/api";
 import { clearSession, saveSession } from "@/lib/session";
+import { parseFieldMap } from "@/lib/field-map";
 import type { Endpoint, Metrics } from "@/lib/types";
 
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -34,11 +35,14 @@ export async function createEndpoint(_previous: CreateEndpointState, formData: F
   const url = String(formData.get("url") ?? "").trim();
   const description = String(formData.get("description") ?? "").trim();
   const eventTypes = String(formData.get("eventTypes") ?? "").split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
+  if (formData.get("exhaustionAlerts") === "on" && !eventTypes.includes("relayforge.delivery.exhausted")) eventTypes.push("relayforge.delivery.exhausted");
   if (!url || eventTypes.length === 0) return { error: "Add a destination URL and at least one event type." };
+  let fieldMap: Record<string, string>;
+  try { fieldMap = parseFieldMap(String(formData.get("fieldMap") ?? "")); } catch (error) { return { error: error instanceof Error ? error.message : "Invalid mapping." }; }
   try {
     const response = await apiJson<{ endpoint: Endpoint; signing_secret: string }>(key, "/v1/endpoints", {
       method: "POST",
-      body: JSON.stringify({ url, description, event_types: eventTypes }),
+      body: JSON.stringify({ url, description, event_types: [...new Set(eventTypes)], verification_required: formData.get("verificationRequired") === "on", field_map: fieldMap }),
     });
     revalidatePath("/endpoints");
     return { endpoint: response.endpoint, secret: response.signing_secret };

@@ -4,6 +4,8 @@ RelayForge is a multi-tenant service for accepting events and delivering signed 
 
 The quickstart below accepts an event and sends a signed webhook to an optional local receiver.
 
+The public `/demo` route illustrates acceptance, a retryable receiver failure, recovery, and delivery history without an API key. It uses example data and makes no API calls.
+
 ## Delivery contract
 
 | Property | Contract |
@@ -123,6 +125,8 @@ Generate a separate 32-byte dashboard session key with `openssl rand -base64 32`
 
 The dashboard shows tenant-scoped metrics, endpoints, circuit state, events, deliveries, attempt history, dead-letter reviews, and replay controls. You can register and pause endpoints; a newly created endpoint's signing secret appears once. The browser submits the API key to the dashboard server at sign-in; the server verifies it and stores it in an encrypted HTTP-only cookie for eight hours. Browser code does not call the Go API with the key. Key revocation is enforced on subsequent API requests. The Compose dashboard binds to localhost and permits an HTTP cookie for local use; use TLS and secure cookies when deploying it beyond a local machine.
 
+The public `/demo` route walks visitors through a simulated failed receiver and successful retry. Authenticated operators can publish or schedule events, inspect analytics, manage team access, configure endpoint verification and field mappings, subscribe to exhaustion alerts, and rotate signing secrets. Write controls appear only for keys with the matching scope.
+
 ## Develop and test
 
 ```sh
@@ -150,6 +154,8 @@ docker compose --env-file /private/relayforge.env -f deploy/compose.yaml ps
 ```
 
 Migrations complete before the API and workers start. Confirm both HTTPS health/dashboard routes and a signed test delivery after startup. Back up PostgreSQL regularly to private off-host storage and test a restore before relying on the deployment. For example, with a private backup directory and a restrictive shell umask, run `docker compose --env-file /private/relayforge.env -f deploy/compose.yaml exec -T postgres pg_dump -U webhooks -Fc webhooks > /private/backups/relayforge.dump`. Keep the encryption key alongside the backup in approved secret storage.
+
+For basic internal monitoring, set `MONITOR_WEBHOOK_URL` in the private env file to an operator-owned HTTPS notification webhook, then start the `monitoring` profile. The monitor probes API, dispatcher, and worker readiness plus due queue age every 60 seconds and sends a notification when the failure set changes or recovers. `MONITOR_BACKLOG_AGE_SECONDS` defaults to 300. Notification destinations are HTTPS-only, re-resolved and pinned before each send, and their URL is never logged. Configure an **external** uptime check for `https://<api-domain>/health/ready` and `https://<dashboard-domain>/` to detect a full VM or network outage; an on-host monitor cannot detect its own host disappearing. Test both notification delivery and recovery. The monitor requires a reachable webhook and starts with `docker compose --env-file /private/relayforge.env -f deploy/compose.yaml --profile monitoring up --build -d`.
 
 For tenant removal, `cmd/tenant-admin` supports `-action=suspend`, `-action=export -file=<new-private-file>`, and `-action=purge -file=<export-file> -confirm-org-id=<same-id>`. Suspension stops new API access and queued delivery claims; existing HTTP attempts can finish. The export is a JSON Lines customer-data snapshot with credential metadata but no API key hashes or signing-secret ciphertext. Purge requires a completed export and no active attempts. Take a separate database backup and follow a maintenance procedure before purging; the export is not a database restore backup.
 

@@ -67,7 +67,9 @@ jobs:
       - name: Verify dashboard page
         run: |
           curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:3000/ -o /tmp/relayforge-landing.html
-          grep -q 'Make sure the message gets through' /tmp/relayforge-landing.html
+          grep -q 'Explore the guided demo' /tmp/relayforge-landing.html
+          curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:3000/demo -o /tmp/relayforge-guided-demo.html
+          grep -q 'makes no live API calls' /tmp/relayforge-guided-demo.html
           curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:3000/login -o /tmp/relayforge-dashboard-login.html
           grep -q 'Sign in to your workspace' /tmp/relayforge-dashboard-login.html
       - name: Verify dashboard sign in
@@ -98,7 +100,8 @@ jobs:
           test "$delivered" = 1
           delivery=$(curl -fsS "http://127.0.0.1:8080/v1/deliveries?event_id=$event_id" -H "Authorization: Bearer $key")
           delivery_id=$(printf '%s' "$delivery" | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"][0]["id"])')
-          for route in endpoints events deliveries dead-letters "events/$event_id" "deliveries/$delivery_id"; do
+          endpoint_id=$(printf '%s' "$endpoint" | python3 -c 'import json,sys; print(json.load(sys.stdin)["endpoint"]["id"])')
+          for route in endpoints analytics team events deliveries dead-letters "endpoints/$endpoint_id" "events/$event_id" "deliveries/$delivery_id"; do
             status=$(curl -sS -b /tmp/relayforge-dashboard-cookies.txt -o /tmp/relayforge-dashboard-page.html -w '%{http_code}' "http://127.0.0.1:3000/$route")
             test "$status" = 200
             if grep -q 'Could not load this view' /tmp/relayforge-dashboard-page.html; then exit 1; fi

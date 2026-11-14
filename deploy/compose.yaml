@@ -123,6 +123,21 @@ services:
       dashboard: {condition: service_healthy}
       api: {condition: service_healthy}
     restart: unless-stopped
+  monitor:
+    profiles: ["monitoring"]
+    build:
+      context: ..
+      args: {TARGET: monitor}
+    environment:
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
+      MONITOR_WEBHOOK_URL: ${MONITOR_WEBHOOK_URL:-}
+      MONITOR_BACKLOG_AGE_SECONDS: ${MONITOR_BACKLOG_AGE_SECONDS:-300}
+      MONITOR_INTERVAL_SECONDS: ${MONITOR_INTERVAL_SECONDS:-60}
+    depends_on:
+      api: {condition: service_healthy}
+      dispatcher: {condition: service_started}
+      worker: {condition: service_started}
+    restart: unless-stopped
   tenant-admin:
     profiles: ["ops"]
     build:

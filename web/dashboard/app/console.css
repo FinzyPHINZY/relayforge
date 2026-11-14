@@ -1,0 +1,45 @@
+/* Shared operator surfaces follow the public site's paper, forest and lime palette. */
+.console-theme {
+  --color-white: #1c3426;
+  --color-slate-50: #1c3426;
+  --color-slate-100: #20392b;
+  --color-slate-200: #2e4836;
+  --color-slate-300: #405b48;
+  --color-slate-400: #5c7061;
+  --color-slate-500: #637767;
+  --color-slate-600: #697d6e;
+  --color-slate-900: #ffffff;
+  --color-slate-950: #eef2e9;
+  --color-emerald-200: #255f30;
+  --color-emerald-300: #2e6a35;
+  --color-emerald-400: #3c7a40;
+  --color-amber-100: #6c4d19;
+  --color-amber-200: #825c1b;
+  --color-amber-300: #92651e;
+  --color-rose-200: #a63243;
+  --color-rose-300: #aa3648;
+  color: #1c3426;
+  color-scheme: light;
+}
+
+.console-sidebar {
+  --color-white: #f0f8ef;
+  --color-slate-100: #e8f2e7;
+  --color-slate-200: #d3e3d3;
+  --color-slate-300: #b7cbb9;
+  --color-slate-400: #9bb39f;
+  --color-slate-500: #819c88;
+  --color-slate-900: #1b3426;
+  --color-slate-950: #10231a;
+  --color-emerald-300: #c9f2a2;
+  --color-emerald-400: #b7f36d;
+  color: #eef8eb;
+  color-scheme: dark;
+}
+
+.console-theme :where(a, button, input, select, textarea):focus-visible {
+  outline: 2px solid #5a9d4a;
+  outline-offset: 2px;
+}
+
+.console-sidebar :where(a, button):focus-visible { outline-color: #b7f36d; }

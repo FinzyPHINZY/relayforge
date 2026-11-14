@@ -8,6 +8,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -58,6 +59,7 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.authenticate)
 		r.Use(s.regionWrites)
 		r.Use(s.rateLimit)
+		r.Get("/me", s.currentPrincipal)
 		r.With(require("events:write")).Post("/events", s.createEvent)
 		r.With(require("events:read")).Get("/events", s.listEvents)
 		r.With(require("events:read")).Get("/events/{id}", s.getEvent)
@@ -79,6 +81,18 @@ func (s *Server) Router() http.Handler {
 		r.With(require("team:write")).Patch("/team/members/{id}", s.patchTeamMember)
 	})
 	return otelhttp.NewHandler(r, "http.server")
+}
+
+func (s *Server) currentPrincipal(w http.ResponseWriter, r *http.Request) {
+	p := r.Context().Value(principalKey).(principal)
+	scopes := make([]string, 0, len(p.Scopes))
+	for scope, allowed := range p.Scopes {
+		if allowed {
+			scopes = append(scopes, scope)
+		}
+	}
+	slices.Sort(scopes)
+	writeJSON(w, 200, map[string]any{"role": p.Role, "scopes": scopes})
 }
 
 // A standby can serve authenticated reads from its database replica, but it
