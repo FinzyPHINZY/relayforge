@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Activity, ArrowUpRight, Boxes, CircleAlert, RadioTower, ScrollText, Workflow } from "lucide-react";
+import { Activity, ArrowUpRight, Boxes, ChartNoAxesCombined, CircleAlert, RadioTower, ScrollText, UsersRound, Workflow } from "lucide-react";
 import { signOut } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 
@@ -9,6 +9,8 @@ const navigation = [
   { href: "/events", label: "Events", icon: Boxes },
   { href: "/deliveries", label: "Deliveries", icon: Workflow },
   { href: "/dead-letters", label: "Dead letters", icon: CircleAlert },
+  { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
+  { href: "/team", label: "Team", icon: UsersRound },
 ];
 
 export function Shell({ children }: { children: React.ReactNode }) {

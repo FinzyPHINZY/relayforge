@@ -24,7 +24,15 @@ export type Endpoint = {
   circuit_status: "closed" | "open" | "half_open";
   circuit_open_until?: string;
   created_at: string;
+  verification_required: boolean;
+  verified_at?: string;
+  field_map: Record<string, string>;
 };
+
+export type Principal = { role: "owner" | "admin" | "operator" | "viewer"; scopes: string[] };
+export type TeamMember = { id: string; name: string; email: string; role: "admin" | "operator" | "viewer"; status: "active" | "suspended"; created_at: string };
+export type AnalyticsBucket = { start: string; attempts: number; succeeded: number; failed: number; p50_duration_ms: number | null; p95_duration_ms: number | null };
+export type DeliveryAnalytics = { window: "24h" | "7d" | "30d"; buckets: AnalyticsBucket[] };
 
 export type Event = { id: string; type: string; status: string; created_at: string; data?: unknown };
 

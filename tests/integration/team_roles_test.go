@@ -23,6 +23,25 @@ func TestTeamRoleAndSuspension(t *testing.T) {
 	if err := json.Unmarshal(body, &created); err != nil {
 		t.Fatal(err)
 	}
+	resp, body = request(t, http.MethodGet, server.URL+"/v1/me", created.APIKey, "")
+	if resp.StatusCode != 200 {
+		t.Fatalf("viewer identity=%d body=%s", resp.StatusCode, body)
+	}
+	var identity struct {
+		Role   string   `json:"role"`
+		Scopes []string `json:"scopes"`
+	}
+	if err := json.Unmarshal(body, &identity); err != nil {
+		t.Fatal(err)
+	}
+	if identity.Role != "viewer" {
+		t.Fatalf("viewer role=%q", identity.Role)
+	}
+	for _, scope := range identity.Scopes {
+		if scope == "events:write" || scope == "team:write" {
+			t.Fatalf("viewer exposed write scope=%q", scope)
+		}
+	}
 	resp, body = request(t, http.MethodGet, server.URL+"/v1/team/members", created.APIKey, "")
 	if resp.StatusCode != 200 {
 		t.Fatalf("member read=%d body=%s", resp.StatusCode, body)
