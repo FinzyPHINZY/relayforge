@@ -2,21 +2,23 @@ import Link from "next/link";
 import type { Metadata } from "next";
 import { ArrowRight, Clock3, DatabaseZap, RadioTower, Workflow } from "lucide-react";
 import { Shell, PageTitle, EmptyState } from "@/components/shell";
+import { StarterChecklist } from "@/components/starter-checklist";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { readApi, requireKey } from "@/lib/api";
 import { dateTime, shortId } from "@/lib/format";
-import type { Delivery, Endpoint, Event, Metrics, Page } from "@/lib/types";
+import type { Delivery, Endpoint, Event, Metrics, Page, Principal } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Overview | RelayForge Console" };
 
 export default async function OverviewPage() {
   const key = await requireKey();
-  const [metrics, deliveries, events, endpoints] = await Promise.all([
+  const [metrics, deliveries, events, endpoints, me] = await Promise.all([
     readApi<Metrics>(key, "/v1/metrics/summary"),
     readApi<Page<Delivery>>(key, "/v1/deliveries?limit=5"),
     readApi<Page<Event>>(key, "/v1/events?limit=5"),
     readApi<Page<Endpoint>>(key, "/v1/endpoints?limit=5"),
+    readApi<Principal>(key, "/v1/me"),
   ]);
   const cards = [
     { label: "Accepted events", value: metrics.events_accepted, icon: DatabaseZap, detail: "Durably stored" },
@@ -25,6 +27,7 @@ export default async function OverviewPage() {
     { label: "Exhausted", value: metrics.deliveries_exhausted, icon: RadioTower, detail: "Eligible for review or replay" },
   ];
   return <Shell><PageTitle eyebrow="Overview" title="Delivery at a glance" description="Durable state from PostgreSQL, scoped to your API key." />
+    <StarterChecklist hasEndpoint={endpoints.data.length > 0} hasEvent={metrics.events_accepted > 0} hasAttempt={metrics.delivery_attempts > 0} canCreateEndpoint={me.scopes.includes("endpoints:write")} canPublishEvent={me.scopes.includes("events:write")} />
     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(({ label, value, icon: Icon, detail }) => <Card key={label}><CardContent><div className="flex items-center justify-between text-sm text-slate-400"><span>{label}</span><Icon size={18} className="text-emerald-400" /></div><p className="mt-5 text-3xl font-semibold tabular-nums text-white">{value.toLocaleString()}</p><p className="mt-2 text-xs text-slate-500">{detail}</p></CardContent></Card>)}</div>
     <div className="mt-5 grid gap-4 sm:grid-cols-3"><MiniStat label="Outbox pending" value={metrics.outbox_pending} /><MiniStat label="In progress" value={metrics.deliveries_processing} /><MiniStat label="Oldest pending" value={metrics.oldest_pending_age_seconds > 0 ? `${Math.round(metrics.oldest_pending_age_seconds)}s` : "—"} /></div>
     <div className="mt-8 grid gap-6 xl:grid-cols-5"><Card className="xl:col-span-3"><CardHeader><div className="flex items-center justify-between"><h2 className="font-semibold">Recent deliveries</h2><Link className="flex items-center gap-1 text-xs text-emerald-300 hover:text-emerald-200" href="/deliveries">View all <ArrowRight size={14} /></Link></div></CardHeader><CardContent className="space-y-1">{deliveries.data.length ? deliveries.data.map((delivery) => <Link key={delivery.id} href={`/deliveries/${delivery.id}`} className="flex items-center justify-between gap-3 rounded-lg px-2 py-3 hover:bg-white/5"><div className="min-w-0"><p className="font-mono text-sm text-slate-200">{shortId(delivery.id)}</p><p className="mt-1 truncate text-xs text-slate-500">{delivery.destination_url}</p></div><StatusBadge status={delivery.status} /></Link>) : <EmptyState title="No deliveries yet" description="Publish an event to a subscribed endpoint." />}</CardContent></Card>

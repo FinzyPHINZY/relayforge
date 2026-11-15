@@ -68,6 +68,8 @@ jobs:
         run: |
           curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:3000/ -o /tmp/relayforge-landing.html
           grep -q 'Explore the guided demo' /tmp/relayforge-landing.html
+          grep -q 'Order fulfillment' /tmp/relayforge-landing.html
+          grep -q 'Scheduled delivery' /tmp/relayforge-landing.html
           curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:3000/demo -o /tmp/relayforge-guided-demo.html
           grep -q 'makes no live API calls' /tmp/relayforge-guided-demo.html
           curl --retry 30 --retry-all-errors --retry-delay 1 -fsS http://127.0.0.1:3000/login -o /tmp/relayforge-dashboard-login.html
@@ -83,6 +85,7 @@ jobs:
           curl --retry 10 --retry-all-errors --retry-delay 1 -fsS -c /tmp/relayforge-dashboard-cookies.txt -o /tmp/relayforge-dashboard-auth.html -F "$action_field=" -F "apiKey=$key" -H 'Origin: http://127.0.0.1:3000' http://127.0.0.1:3000/login
           curl --retry 10 --retry-all-errors --retry-delay 1 -fsS -b /tmp/relayforge-dashboard-cookies.txt http://127.0.0.1:3000/dashboard -o /tmp/relayforge-dashboard-overview.html
           grep -q 'Delivery at a glance' /tmp/relayforge-dashboard-overview.html
+          grep -q 'Your first real delivery' /tmp/relayforge-dashboard-overview.html
       - name: Verify signed demo delivery
         run: |
           key=$(cat /tmp/relayforge-ci-api-key)
@@ -105,6 +108,7 @@ jobs:
             status=$(curl -sS -b /tmp/relayforge-dashboard-cookies.txt -o /tmp/relayforge-dashboard-page.html -w '%{http_code}' "http://127.0.0.1:3000/$route")
             test "$status" = 200
             if grep -q 'Could not load this view' /tmp/relayforge-dashboard-page.html; then exit 1; fi
+            if [ "$route" = events ]; then grep -q 'Order created' /tmp/relayforge-dashboard-page.html; fi
           done
       - name: Stop Compose demo
         if: always()

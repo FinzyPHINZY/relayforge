@@ -8,12 +8,17 @@ import {
   Check,
   CheckCheck,
   Clock3,
+  CalendarClock,
+  Building2,
+  CreditCard,
   Fingerprint,
   GitBranch,
   LockKeyhole,
   RadioTower,
   RotateCcw,
   ShieldCheck,
+  ShoppingBag,
+  Siren,
   Terminal,
   Webhook,
 } from "lucide-react";
@@ -49,6 +54,14 @@ const features = [
   },
 ];
 
+const useCases = [
+  { icon: ShoppingBag, title: "Order fulfillment", role: "ECOMMERCE DEVELOPER", story: "As an ecommerce developer, I want order.created events to reach fulfillment after an outage, so orders keep moving." },
+  { icon: CreditCard, title: "Payment processing", role: "PAYMENT INTEGRATOR", story: "As a payment integrator, I want signed deliveries with a stable webhook ID, so my receiver can avoid processing a payment twice." },
+  { icon: Building2, title: "Customer isolation", role: "PLATFORM OPERATOR", story: "As a platform operator, I want each customer's events and endpoints kept separate, so one account cannot see or affect another." },
+  { icon: Siren, title: "Incident recovery", role: "ON-CALL ENGINEER", story: "As an on-call engineer, I want attempt history, review notes, and replay, so I can recover a failed delivery with a clear record." },
+  { icon: CalendarClock, title: "Scheduled delivery", role: "PRODUCT DEVELOPER", story: "As a product developer, I want to publish an event for later, so a customer's webhook arrives when the planned action is due." },
+];
+
 function Brand({ light = false }: { light?: boolean }) {
   return (
     <Link href="/" className={`landing-brand${light ? " landing-brand-light" : ""}`} aria-label="RelayForge home">
@@ -67,6 +80,7 @@ export default function LandingPage() {
           <nav className="landing-nav" aria-label="Main navigation">
             <Link href="/demo">Guided demo</Link>
             <a href="#how-it-works">How it works</a>
+            <a href="#use-cases">Use cases</a>
             <a href="#capabilities">Capabilities</a>
             <a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer">GitHub <ArrowUpRight size={14} aria-hidden="true" /></a>
           </nav>
@@ -130,6 +144,14 @@ export default function LandingPage() {
             <div className="landing-step"><span className="landing-step-index">01 / PUBLISH</span><span className="landing-step-icon"><Terminal size={23} aria-hidden="true" /></span><h3>Send your event</h3><p>Publish once with an idempotency key. RelayForge returns after the event and its outbox entry commit together.</p></div>
             <div className="landing-step"><span className="landing-step-index">02 / DELIVER</span><span className="landing-step-icon"><RadioTower size={23} aria-hidden="true" /></span><h3>We handle the handoff</h3><p>Matching endpoints receive signed HTTP requests. Workers track attempts and retry transient failures.</p></div>
             <div className="landing-step"><span className="landing-step-index">03 / RECOVER</span><span className="landing-step-icon"><Activity size={23} aria-hidden="true" /></span><h3>See what happened</h3><p>Inspect every attempt, review exhausted deliveries, and replay when the receiver is ready.</p></div>
+          </div>
+        </section>
+
+        <section id="use-cases" className="landing-section landing-use-cases" aria-labelledby="use-cases-heading">
+          <div className="landing-container">
+            <div className="landing-section-head"><div><span className="landing-kicker">WHERE RELAYFORGE FITS</span><h2 id="use-cases-heading">Real workflows.<br /><em>Reliable handoffs.</em></h2></div><p>Five ways teams use the same delivery foundation.</p></div>
+            <div className="landing-use-case-grid">{useCases.map(({ icon: Icon, title, role, story }, index) => <article className="landing-use-case" key={title}><div className="landing-use-case-top"><span className="landing-use-case-icon"><Icon size={21} strokeWidth={1.8} aria-hidden="true" /></span><span>{String(index + 1).padStart(2, "0")} / 05</span></div><div><span className="landing-use-case-role">{role}</span><h3>{title}</h3><p>“{story}”</p></div></article>)}</div>
+            <div className="landing-use-case-next"><span>See these delivery states in action.</span><Link href="/demo">Walk through the guided demo <ArrowRight size={16} aria-hidden="true" /></Link></div>
           </div>
         </section>
 
