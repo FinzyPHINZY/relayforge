@@ -20,8 +20,9 @@ data in an encrypted EBS root volume and has no SSH ingress.
      --profile project --region eu-north-1
    ```
 
-3. In Namecheap, set the domain's nameservers to the stack's `NameServers`
-   output. Route 53 already contains A records for `relayforge.site` and
+3. In Namecheap, set the domain's nameservers to `ns-622.awsdns-13.net`,
+   `ns-1034.awsdns-01.org`, `ns-1848.awsdns-39.co.uk`, and
+   `ns-237.awsdns-29.com`. Route 53 already contains A records for `relayforge.site` and
    `api.relayforge.site` pointing to the stack's Elastic IP. Wait for DNS to
    propagate; Caddy obtains HTTPS certificates automatically.
 4. Merge this deployment configuration to `main`. The pipeline will check and

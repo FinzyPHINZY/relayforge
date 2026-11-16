@@ -7,6 +7,14 @@ Parameters:
   GitHubConnectionArn:
     Type: String
     Description: Authorized CodeConnections GitHub connection ARN.
+  ReleaseBucketName:
+    Type: String
+    Default: relayforge-prod-releasebucket-kxlksa16xh5g
+    Description: Private encrypted bucket retained from the initial stack attempt.
+  HostedZoneId:
+    Type: String
+    Default: Z00940573MAD9NAUK3KP0
+    Description: RelayForge Route 53 hosted zone retained from the initial stack attempt.
   RepositoryId:
     Type: String
     Default: FinzyPHINZY/relayforge
@@ -23,26 +31,6 @@ Parameters:
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
 Resources:
-  ReleaseBucket:
-    Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Metadata:
-      com.aws.cloudformation.Context:
-        why: Stores CodePipeline artifacts and immutable source releases for the deployment host.
-        must: Keep private, encrypted, and retained across stack deletion.
-    Properties:
-      BucketEncryption:
-        ServerSideEncryptionConfiguration:
-          - ServerSideEncryptionByDefault:
-              SSEAlgorithm: AES256
-      PublicAccessBlockConfiguration:
-        BlockPublicAcls: true
-        BlockPublicPolicy: true
-        IgnorePublicAcls: true
-        RestrictPublicBuckets: true
-      VersioningConfiguration:
-        Status: Enabled
   ReleaseBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Metadata:
@@ -50,7 +38,7 @@ Resources:
         why: Rejects plaintext transport to deployment artifacts.
         must: Keep HTTPS enforcement.
     Properties:
-      Bucket: !Ref ReleaseBucket
+      Bucket: !Ref ReleaseBucketName
       PolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -58,8 +46,8 @@ Resources:
             Principal: '*'
             Action: s3:*
             Resource:
-              - !GetAtt ReleaseBucket.Arn
-              - !Sub '${ReleaseBucket.Arn}/*'
+              - !Sub 'arn:aws:s3:::${ReleaseBucketName}'
+              - !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
             Condition:
               Bool:
                 aws:SecureTransport: 'false'
@@ -107,10 +95,10 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub '${ReleaseBucket.Arn}/releases/*'
+                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/releases/*'
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub '${ReleaseBucket.Arn}/bootstrap/*'
+                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/bootstrap/*'
   HostProfile:
     Type: AWS::IAM::InstanceProfile
     Metadata:
@@ -184,16 +172,6 @@ Resources:
     Properties:
       Domain: vpc
       InstanceId: !Ref Host
-  DomainZone:
-    Type: AWS::Route53::HostedZone
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
-    Metadata:
-      com.aws.cloudformation.Context:
-        why: Holds the dashboard and API records after Namecheap nameserver delegation.
-        must: Preserve the hosted zone during routine stack updates.
-    Properties:
-      Name: !Ref DashboardDomain
   DashboardRecord:
     Type: AWS::Route53::RecordSet
     Metadata:
@@ -201,7 +179,7 @@ Resources:
         why: Directs the dashboard domain to the fixed EC2 address.
         must: Keep aligned with HostAddress.
     Properties:
-      HostedZoneId: !Ref DomainZone
+      HostedZoneId: !Ref HostedZoneId
       Name: !Ref DashboardDomain
       Type: A
       TTL: '300'
@@ -213,7 +191,7 @@ Resources:
         why: Directs the API subdomain to the fixed EC2 address.
         must: Keep aligned with HostAddress.
     Properties:
-      HostedZoneId: !Ref DomainZone
+      HostedZoneId: !Ref HostedZoneId
       Name: !Ref ApiDomain
       Type: A
       TTL: '300'
@@ -242,10 +220,10 @@ Resources:
                 Resource: !Sub 'arn:aws:logs:eu-north-1:${AWS::AccountId}:log-group:/aws/codebuild/${AWS::StackName}-checks:*'
               - Effect: Allow
                 Action: [s3:GetObject, s3:PutObject]
-                Resource: !Sub '${ReleaseBucket.Arn}/*'
+                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
               - Effect: Allow
                 Action: s3:ListBucket
-                Resource: !GetAtt ReleaseBucket.Arn
+                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}'
               - Effect: Allow
                 Action: ssm:SendCommand
                 Resource:
@@ -275,7 +253,7 @@ Resources:
         PrivilegedMode: true
         EnvironmentVariables:
           - Name: RELEASE_BUCKET
-            Value: !Ref ReleaseBucket
+            Value: !Ref ReleaseBucketName
           - Name: INSTANCE_ID
             Value: !Ref Host
       TimeoutInMinutes: 60
@@ -307,8 +285,8 @@ Resources:
               - Effect: Allow
                 Action: [s3:GetObject, s3:PutObject, s3:GetBucketVersioning]
                 Resource:
-                  - !GetAtt ReleaseBucket.Arn
-                  - !Sub '${ReleaseBucket.Arn}/*'
+                  - !Sub 'arn:aws:s3:::${ReleaseBucketName}'
+                  - !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
               - Effect: Allow
                 Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
                 Resource: !GetAtt BuildProject.Arn
@@ -325,7 +303,7 @@ Resources:
       ExecutionMode: QUEUED
       ArtifactStore:
         Type: S3
-        Location: !Ref ReleaseBucket
+        Location: !Ref ReleaseBucketName
       Stages:
         - Name: Source
           Actions:
@@ -361,7 +339,7 @@ Outputs:
     Value: !Ref Host
   PublicIp:
     Value: !Ref HostAddress
-  NameServers:
-    Value: !Join [', ', !GetAtt DomainZone.NameServers]
+  RelayforgeZoneId:
+    Value: !Ref HostedZoneId
   PipelineName:
     Value: !Ref Pipeline
