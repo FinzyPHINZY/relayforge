@@ -8,6 +8,9 @@ SDK checks on the host. Only passing checks start the Compose services; a
 health check then completes the deployment. The instance keeps PostgreSQL data
 in an encrypted EBS root volume and has no SSH ingress.
 
+The pipeline has an explicit GitHub push trigger for `main`. GitHub branch
+protection requires the `test` check before a pull request can merge.
+
 ## One-time setup
 
 1. Confirm the selected Region under AWS Settings → View all projects → Overview

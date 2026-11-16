@@ -94,7 +94,7 @@ Resources:
             Version: '2012-10-17'
             Statement:
               - Effect: Allow
-                Action: s3:GetObject
+                Action: [s3:GetObject, s3:GetObjectVersion]
                 Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
   HostProfile:
     Type: AWS::IAM::InstanceProfile
@@ -297,6 +297,13 @@ Resources:
       RoleArn: !GetAtt PipelineRole.Arn
       PipelineType: V2
       ExecutionMode: QUEUED
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHubMain
+            Push:
+              - Branches:
+                  Includes: [main]
       ArtifactStore:
         Type: S3
         Location: !Ref ReleaseBucketName
@@ -313,7 +320,7 @@ Resources:
                 ConnectionArn: !Ref GitHubConnectionArn
                 FullRepositoryId: !Ref RepositoryId
                 BranchName: main
-                DetectChanges: true
+                DetectChanges: false
               OutputArtifacts:
                 - Name: SourceCode
               RunOrder: 1
