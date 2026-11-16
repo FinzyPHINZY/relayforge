@@ -95,10 +95,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: s3:GetObject
-                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/releases/*'
-              - Effect: Allow
-                Action: s3:GetObject
-                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/bootstrap/*'
+                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
   HostProfile:
     Type: AWS::IAM::InstanceProfile
     Metadata:
@@ -140,7 +137,7 @@ Resources:
           #!/bin/bash
           set -euo pipefail
           dnf update -y
-          dnf install -y docker wget openssl
+          dnf install -y docker ruby wget openssl
           systemctl enable --now docker
           usermod -aG docker ec2-user
           mkdir -p /usr/local/lib/docker/cli-plugins /etc/relayforge /opt/relayforge/releases
@@ -163,6 +160,11 @@ Resources:
           COMPOSE_PROFILES=public
           EOF
           chmod 0600 /etc/relayforge/relayforge.env
+          cd /tmp
+          curl -fsSL https://aws-codedeploy-eu-north-1.s3.eu-north-1.amazonaws.com/latest/install -o codedeploy-install
+          chmod 0755 codedeploy-install
+          ./codedeploy-install auto
+          systemctl enable --now codedeploy-agent
   HostAddress:
     Type: AWS::EC2::EIP
     Metadata:
@@ -196,73 +198,55 @@ Resources:
       Type: A
       TTL: '300'
       ResourceRecords: [!Ref HostAddress]
-  BuildRole:
+  DeploymentRole:
     Type: AWS::IAM::Role
     Metadata:
       com.aws.cloudformation.Context:
-        why: Runs merge checks and sends the approved release to the SSM host.
-        must: Scope S3 writes to the release bucket and SSM to this host.
+        why: Lets CodeDeploy coordinate in-place deployment to the tagged host.
+        must: Trust only the CodeDeploy service.
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
-              Service: codebuild.amazonaws.com
+              Service: codedeploy.amazonaws.com
             Action: sts:AssumeRole
-      Policies:
-        - PolicyName: build-and-deploy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: [logs:CreateLogGroup, logs:CreateLogStream, logs:PutLogEvents]
-                Resource: !Sub 'arn:aws:logs:eu-north-1:${AWS::AccountId}:log-group:/aws/codebuild/${AWS::StackName}-checks:*'
-              - Effect: Allow
-                Action: [s3:GetObject, s3:PutObject]
-                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
-              - Effect: Allow
-                Action: s3:ListBucket
-                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}'
-              - Effect: Allow
-                Action: ssm:SendCommand
-                Resource:
-                  - !Sub 'arn:aws:ssm:eu-north-1::document/AWS-RunShellScript'
-                  - !Sub 'arn:aws:ec2:eu-north-1:${AWS::AccountId}:instance/${Host}'
-              - Effect: Allow
-                Action: ssm:GetCommandInvocation
-                Resource: '*'
-  BuildProject:
-    Type: AWS::CodeBuild::Project
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+  DeploymentApplication:
+    Type: AWS::CodeDeploy::Application
     Metadata:
       com.aws.cloudformation.Context:
-        why: Re-runs repository checks on main before deploying the exact commit.
-        must: Stop the build on test failure.
+        why: Receives the GitHub source artifact from CodePipeline.
+        must: Use EC2 in-place deployments in eu-north-1.
     Properties:
-      Name: !Sub '${AWS::StackName}-checks'
-      ServiceRole: !GetAtt BuildRole.Arn
-      Artifacts:
-        Type: CODEPIPELINE
-      Source:
-        Type: CODEPIPELINE
-        BuildSpec: deploy/aws/buildspec.yml
-      Environment:
-        Type: LINUX_CONTAINER
-        ComputeType: BUILD_GENERAL1_MEDIUM
-        Image: aws/codebuild/standard:7.0
-        PrivilegedMode: true
-        EnvironmentVariables:
-          - Name: RELEASE_BUCKET
-            Value: !Ref ReleaseBucketName
-          - Name: INSTANCE_ID
-            Value: !Ref Host
-      TimeoutInMinutes: 60
+      ApplicationName: !Sub '${AWS::StackName}-app'
+      ComputePlatform: Server
+  DeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Deploys only to the RelayForge EC2 host after its AppSpec checks pass.
+        must: Keep deployment failure rollback enabled.
+    Properties:
+      ApplicationName: !Ref DeploymentApplication
+      DeploymentGroupName: !Sub '${AWS::StackName}-host'
+      DeploymentConfigName: CodeDeployDefault.AllAtOnce
+      ServiceRoleArn: !GetAtt DeploymentRole.Arn
+      Ec2TagFilters:
+        - Key: Name
+          Value: relayforge-app
+          Type: KEY_AND_VALUE
+      AutoRollbackConfiguration:
+        Enabled: true
+        Events: [DEPLOYMENT_FAILURE]
   PipelineRole:
     Type: AWS::IAM::Role
     Metadata:
       com.aws.cloudformation.Context:
-        why: Reads GitHub main through CodeConnections and starts the check-and-deploy build.
-        must: Restrict the connection and build project to this pipeline.
+        why: Reads GitHub main through CodeConnections and starts the CodeDeploy check-and-deploy action.
+        must: Restrict the connection and deployment application to this pipeline.
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -272,7 +256,7 @@ Resources:
               Service: codepipeline.amazonaws.com
             Action: sts:AssumeRole
       Policies:
-        - PolicyName: source-and-build
+        - PolicyName: source-and-deploy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:
@@ -288,8 +272,20 @@ Resources:
                   - !Sub 'arn:aws:s3:::${ReleaseBucketName}'
                   - !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
               - Effect: Allow
-                Action: [codebuild:StartBuild, codebuild:BatchGetBuilds]
-                Resource: !GetAtt BuildProject.Arn
+                Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplication
+                  - codedeploy:GetDeployment
+                  - codedeploy:RegisterApplicationRevision
+                  - codedeploy:ListDeployments
+                  - codedeploy:ListDeploymentGroups
+                  - codedeploy:GetDeploymentGroup
+                Resource:
+                  - !Sub 'arn:aws:codedeploy:eu-north-1:${AWS::AccountId}:application:${DeploymentApplication}'
+                  - !Sub 'arn:aws:codedeploy:eu-north-1:${AWS::AccountId}:deploymentgroup:${DeploymentApplication}/${DeploymentGroup}'
+              - Effect: Allow
+                Action: codedeploy:GetDeploymentConfig
+                Resource: !Sub 'arn:aws:codedeploy:eu-north-1:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.AllAtOnce'
   Pipeline:
     Type: AWS::CodePipeline::Pipeline
     Metadata:
@@ -325,12 +321,13 @@ Resources:
           Actions:
             - Name: ChecksThenDeploy
               ActionTypeId:
-                Category: Build
+                Category: Deploy
                 Owner: AWS
-                Provider: CodeBuild
+                Provider: CodeDeploy
                 Version: '1'
               Configuration:
-                ProjectName: !Ref BuildProject
+                ApplicationName: !Ref DeploymentApplication
+                DeploymentGroupName: !Ref DeploymentGroup
               InputArtifacts:
                 - Name: SourceCode
               RunOrder: 1
