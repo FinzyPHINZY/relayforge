@@ -297,6 +297,7 @@ Resources:
       RoleArn: !GetAtt PipelineRole.Arn
       PipelineType: V2
       ExecutionMode: QUEUED
+      Triggers: []
       ArtifactStore:
         Type: S3
         Location: !Ref ReleaseBucketName
