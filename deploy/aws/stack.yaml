@@ -140,7 +140,7 @@ Resources:
           #!/bin/bash
           set -euo pipefail
           dnf update -y
-          dnf install -y docker curl ruby wget openssl
+          dnf install -y docker wget openssl
           systemctl enable --now docker
           usermod -aG docker ec2-user
           mkdir -p /usr/local/lib/docker/cli-plugins /etc/relayforge /opt/relayforge/releases
