@@ -107,7 +107,7 @@ func retireExpiredSecrets(ctx context.Context, pool *pgxpool.Pool) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := pool.Exec(ctx, `UPDATE endpoint_secrets SET state='retired',retired_at=overlap_until WHERE state='overlap' AND overlap_until<=now()`); err != nil && ctx.Err() == nil {
+			if _, err := delivery.RetireExpiredSecrets(ctx, pool); err != nil && ctx.Err() == nil {
 				slog.Error("secret retirement failed", "error", err)
 			}
 		}

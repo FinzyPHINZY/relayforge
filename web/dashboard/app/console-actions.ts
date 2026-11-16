@@ -31,6 +31,24 @@ export async function updateEndpointControls(_previous: ControlState, form: Form
   } catch (error) { return failure(error); }
 }
 
+export async function updateEndpointDeliveryPolicy(_previous: ControlState, form: FormData): Promise<ControlState> {
+  const key = await requireKey();
+  const id = String(form.get("id") ?? "");
+  const concurrency = String(form.get("concurrencyLimit") ?? "");
+  const rate = String(form.get("rateLimitPerMinute") ?? "");
+  const timeout = String(form.get("timeoutMs") ?? "");
+  const maxAttempts = String(form.get("maxAttempts") ?? "");
+  if (!uuid.test(id)) return { error: "Invalid endpoint." };
+  if (!/^\d+$/.test(concurrency) || Number(concurrency) < 1 || Number(concurrency) > 100 || !/^\d+$/.test(rate) || Number(rate) > 6000) return { error: "Use 1–100 concurrent attempts and 0–6,000 deliveries per minute." };
+  if (!/^\d+$/.test(timeout) || Number(timeout) < 1000 || Number(timeout) > 30000 || !/^\d+$/.test(maxAttempts) || Number(maxAttempts) < 1 || Number(maxAttempts) > 8) return { error: "Use a 1,000–30,000 ms timeout and 1–8 total attempts." };
+  try {
+    await apiJson<Endpoint>(key, `/v1/endpoints/${id}`, { method: "PATCH", body: JSON.stringify({ concurrency_limit: Number(concurrency), rate_limit_per_minute: Number(rate), timeout_ms: Number(timeout), max_attempts: Number(maxAttempts) }) });
+    revalidatePath("/endpoints");
+    revalidatePath(`/endpoints/${id}`);
+    return { success: "Delivery policy saved. New delivery runs use the timeout and retry limit; the current rate slot is retained." };
+  } catch (error) { return failure(error); }
+}
+
 export async function verifyEndpointControl(_previous: ControlState, form: FormData): Promise<ControlState> {
   const key = await requireKey();
   const id = String(form.get("id") ?? "");

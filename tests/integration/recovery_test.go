@@ -111,6 +111,10 @@ func TestDeliveryHistoryReplayAndTenantIsolation(t *testing.T) {
 	if repeated := replayRequest(t, apiServer.URL, key, claim.ID, "repair-1"); repeated != replayID {
 		t.Fatalf("idempotent replay IDs %s and %s", replayID, repeated)
 	}
+	var replayAudits int
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE target_id=$1 AND action='delivery.replayed'`, replayID).Scan(&replayAudits); err != nil || replayAudits != 1 {
+		t.Fatalf("idempotent replay audit count=%d err=%v", replayAudits, err)
+	}
 	resp, _ = request(t, "GET", apiServer.URL+"/v1/deliveries/"+replayID, otherKey, "")
 	if resp.StatusCode != 404 {
 		t.Fatalf("cross-tenant replay status=%d", resp.StatusCode)

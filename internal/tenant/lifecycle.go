@@ -12,6 +12,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"webhook_delivery/internal/audit"
 	"webhook_delivery/internal/id"
 )
 
@@ -33,6 +34,7 @@ var exportQueries = []struct{ name, query string }{
 	{"replay_requests", `SELECT row_to_json(t) FROM (SELECT * FROM replay_requests WHERE organization_id=$1) t`},
 	{"delivery_reviews", `SELECT row_to_json(t) FROM (SELECT * FROM delivery_reviews WHERE organization_id=$1) t`},
 	{"delivery_review_history", `SELECT row_to_json(t) FROM (SELECT * FROM delivery_review_history WHERE organization_id=$1) t`},
+	{"audit_events", `SELECT row_to_json(t) FROM (SELECT * FROM audit_events WHERE organization_id=$1) t`},
 	{"endpoint_circuits", `SELECT row_to_json(t) FROM (SELECT * FROM endpoint_circuits WHERE organization_id=$1) t`},
 	{"organization_scheduling", `SELECT row_to_json(t) FROM (SELECT * FROM organization_scheduling WHERE organization_id=$1) t`},
 }
@@ -41,14 +43,27 @@ func Suspend(ctx context.Context, pool *pgxpool.Pool, orgID string) error {
 	if !id.Valid(orgID) {
 		return errors.New("invalid organization ID")
 	}
-	tag, err := pool.Exec(ctx, `UPDATE organizations SET status='suspended',updated_at=now() WHERE id=$1`, orgID)
+	tx, err := pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	if tag.RowsAffected() != 1 {
-		return errors.New("organization not found")
+	defer tx.Rollback(ctx)
+	var status string
+	if err = tx.QueryRow(ctx, `SELECT status FROM organizations WHERE id=$1 FOR UPDATE`, orgID).Scan(&status); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return errors.New("organization not found")
+		}
+		return err
 	}
-	return nil
+	if status == "active" {
+		if _, err = tx.Exec(ctx, `UPDATE organizations SET status='suspended',updated_at=now() WHERE id=$1`, orgID); err != nil {
+			return err
+		}
+		if err = audit.Write(ctx, tx, audit.Entry{OrganizationID: orgID, ActorRole: "system", Action: "organization.suspended", TargetType: "organization", TargetID: orgID}); err != nil {
+			return err
+		}
+	}
+	return tx.Commit(ctx)
 }
 
 type exportLine struct {
@@ -198,8 +213,12 @@ func Purge(ctx context.Context, pool *pgxpool.Pool, orgID, exportPath string) er
 	if active != 0 {
 		return fmt.Errorf("active delivery claims remain (%d); wait and retry", active)
 	}
+	if _, err = tx.Exec(ctx, `SET LOCAL relayforge.audit_purge = 'on'`); err != nil {
+		return err
+	}
 	// Clear the self-reference before deleting all delivery runs.
 	statements := []string{
+		`DELETE FROM audit_events WHERE organization_id=$1`,
 		`DELETE FROM delivery_review_history WHERE organization_id=$1`,
 		`DELETE FROM delivery_reviews WHERE organization_id=$1`,
 		`DELETE FROM replay_requests WHERE organization_id=$1`,

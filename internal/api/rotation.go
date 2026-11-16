@@ -72,7 +72,7 @@ func (s *Server) rotateEndpointSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	// Retire any older overlap before opening a new one; only one previous
 	// secret needs to remain valid for receiver migration.
-	_, err = tx.Exec(ctx, `UPDATE endpoint_secrets SET state='retired',retired_at=now(),overlap_until=NULL WHERE endpoint_id=$1 AND organization_id=$2 AND state='overlap'`, endpointID, orgID)
+	_, err = tx.Exec(ctx, `UPDATE endpoint_secrets SET state='retired',retired_at=now(),overlap_until=NULL,ciphertext=''::bytea,nonce=''::bytea WHERE endpoint_id=$1 AND organization_id=$2 AND state='overlap'`, endpointID, orgID)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
@@ -86,6 +86,10 @@ func (s *Server) rotateEndpointSecret(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO endpoint_secrets (id,organization_id,endpoint_id,ciphertext,nonce,key_id) VALUES ($1,$2,$3,$4,$5,$6)`, newID, orgID, endpointID, ciphertext, nonce, s.EncryptionKeyID)
 	if err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	if err = writeAudit(r, tx, "endpoint.secret_rotated", "endpoint", endpointID, map[string]any{"signing_secret_id": newID, "previous_signing_secret_id": previousID, "overlap_seconds": overlap}); err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}

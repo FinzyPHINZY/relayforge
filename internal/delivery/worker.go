@@ -48,7 +48,7 @@ func Complete(ctx context.Context, pool *pgxpool.Pool, c Claimed, r Result) (boo
 	if err != nil {
 		return false, err
 	}
-	tag, err := tx.Exec(ctx, `UPDATE delivery_attempts SET finished_at=now(),duration_ms=$3,http_status=$4,outcome=$5,error_code=$6,response_excerpt=$7 WHERE id=$1 AND delivery_id=$2 AND finished_at IS NULL`, c.AttemptID, c.ID, int(r.Duration.Milliseconds()), nullableHTTPStatus(r.HTTPStatus), r.Outcome, nullableError(r.ErrorCode), r.ResponseExcerpt)
+	tag, err := tx.Exec(ctx, `UPDATE delivery_attempts SET finished_at=now(),duration_ms=$3,http_status=$4,outcome=$5,error_code=$6,response_excerpt=$7,retry_scheduled_at=CASE WHEN $8='retry_wait' THEN $9::timestamptz END WHERE id=$1 AND delivery_id=$2 AND finished_at IS NULL`, c.AttemptID, c.ID, int(r.Duration.Milliseconds()), nullableHTTPStatus(r.HTTPStatus), r.Outcome, nullableError(r.ErrorCode), r.ResponseExcerpt, status, next)
 	if err != nil {
 		return false, err
 	}
@@ -85,6 +85,7 @@ func Complete(ctx context.Context, pool *pgxpool.Pool, c Claimed, r Result) (boo
 	if err = tx.Commit(ctx); err != nil {
 		return false, err
 	}
+	observability.RecordAttempt(ctx, r.Outcome, r.Duration, status == "retry_wait")
 	return true, nil
 }
 
@@ -118,7 +119,7 @@ func (e Engine) Run(ctx context.Context) {
 		e.Concurrency = 1
 	}
 	if e.EndpointConcurrency < 1 {
-		e.EndpointConcurrency = 2
+		e.EndpointConcurrency = 100
 	}
 	if e.TenantConcurrency < 1 {
 		e.TenantConcurrency = 10
@@ -192,9 +193,12 @@ func (e Engine) workLoop(claimCtx, sendCtx context.Context, workerID string) {
 			result = e.Sender.Send(attemptCtx, *claim)
 		}
 		applied, err := Complete(attemptCtx, e.DB, *claim, result)
+		if applied {
+			slog.InfoContext(attemptCtx, "delivery attempt completed", "delivery_id", claim.ID, "attempt_id", claim.AttemptID, "outcome", result.Outcome, "http_status", result.HTTPStatus, "error_code", result.ErrorCode, "duration_ms", result.Duration.Milliseconds(), "retryable", result.Retryable)
+		}
 		span.End()
 		if err != nil && sendCtx.Err() == nil {
-			slog.Error("completion failed", "delivery_id", claim.ID, "error", err)
+			slog.ErrorContext(attemptCtx, "completion failed", "delivery_id", claim.ID, "error", err)
 		}
 		if !applied && err == nil {
 			slog.Warn("stale completion ignored", "delivery_id", claim.ID)

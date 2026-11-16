@@ -19,6 +19,7 @@ type Claimed struct {
 	EventCreatedAt                                                                time.Time
 	Timeout                                                                       time.Duration
 	AttemptNumber, MaxAttempts                                                    int
+	RateLimitPerMinute                                                            int
 	LeaseGeneration                                                               int64
 	WorkerID                                                                      string
 	TraceParent                                                                   string
@@ -28,10 +29,12 @@ type Claimed struct {
 // ClaimOne atomically reserves a due delivery and its attempt. It returns nil
 // when no work is due. The caller must commit before making any HTTP request.
 func ClaimOne(ctx context.Context, pool *pgxpool.Pool, workerID string, lease time.Duration) (*Claimed, error) {
-	return ClaimOneWithLimits(ctx, pool, workerID, lease, 2, 10)
+	return ClaimOneWithLimits(ctx, pool, workerID, lease, 100, 10)
 }
 
 // ClaimOneWithLimits shares endpoint and tenant capacity across all workers.
+// endpointLimit is an operator safety ceiling over the endpoint's own policy.
+// The rate cursor is reserved in the same transaction as the delivery claim.
 // Least-recently-served tenant order keeps a busy tenant from monopolizing claims.
 func ClaimOneWithLimits(ctx context.Context, pool *pgxpool.Pool, workerID string, lease time.Duration, endpointLimit, tenantLimit int) (*Claimed, error) {
 	if endpointLimit < 1 || tenantLimit < 1 {
@@ -45,7 +48,7 @@ func ClaimOneWithLimits(ctx context.Context, pool *pgxpool.Pool, workerID string
 	var c Claimed
 	var timeoutMS int
 	var parent *string
-	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.endpoint_id,d.event_id,d.destination_url,d.timeout_ms,d.max_attempts,e.event_type,e.payload,e.created_at,d.traceparent,d.field_map FROM deliveries d JOIN organizations org ON org.id=d.organization_id JOIN endpoints ep ON ep.id=d.endpoint_id AND ep.organization_id=d.organization_id JOIN endpoint_circuits ec ON ec.endpoint_id=ep.id AND ec.organization_id=ep.organization_id JOIN organization_scheduling os ON os.organization_id=d.organization_id JOIN events e ON e.id=d.event_id AND e.organization_id=d.organization_id WHERE d.status IN ('pending','retry_wait') AND d.next_attempt_at<=now() AND org.status='active' AND ep.status='active' AND (NOT ep.verification_required OR ep.verified_at IS NOT NULL) AND ec.active_claims<$1 AND os.active_claims<$2 AND (ec.open_until IS NULL OR (ec.open_until<=now() AND ec.probe_delivery_id IS NULL)) ORDER BY os.last_claimed_at NULLS FIRST,d.next_attempt_at,d.id FOR UPDATE OF d,ec,os SKIP LOCKED FOR SHARE OF org LIMIT 1`, endpointLimit, tenantLimit).Scan(&c.ID, &c.OrganizationID, &c.EndpointID, &c.EventID, &c.DestinationURL, &timeoutMS, &c.MaxAttempts, &c.EventType, &c.Payload, &c.EventCreatedAt, &parent, &c.FieldMap)
+	err = tx.QueryRow(ctx, `SELECT d.id,d.organization_id,d.endpoint_id,d.event_id,d.destination_url,d.timeout_ms,d.max_attempts,ep.rate_limit_per_minute,e.event_type,e.payload,e.created_at,d.traceparent,d.field_map FROM deliveries d JOIN organizations org ON org.id=d.organization_id JOIN endpoints ep ON ep.id=d.endpoint_id AND ep.organization_id=d.organization_id JOIN endpoint_circuits ec ON ec.endpoint_id=ep.id AND ec.organization_id=ep.organization_id JOIN organization_scheduling os ON os.organization_id=d.organization_id JOIN events e ON e.id=d.event_id AND e.organization_id=d.organization_id WHERE d.status IN ('pending','retry_wait') AND d.next_attempt_at<=now() AND org.status='active' AND ep.status='active' AND (NOT ep.verification_required OR ep.verified_at IS NOT NULL) AND ec.active_claims<LEAST(ep.concurrency_limit,$1) AND os.active_claims<$2 AND (ep.rate_limit_per_minute=0 OR ec.next_rate_at IS NULL OR ec.next_rate_at<=clock_timestamp()) AND (ec.open_until IS NULL OR (ec.open_until<=now() AND ec.probe_delivery_id IS NULL)) ORDER BY os.last_claimed_at NULLS FIRST,d.next_attempt_at,d.id FOR UPDATE OF d,ec,os SKIP LOCKED FOR SHARE OF org,ep LIMIT 1`, endpointLimit, tenantLimit).Scan(&c.ID, &c.OrganizationID, &c.EndpointID, &c.EventID, &c.DestinationURL, &timeoutMS, &c.MaxAttempts, &c.RateLimitPerMinute, &c.EventType, &c.Payload, &c.EventCreatedAt, &parent, &c.FieldMap)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, nil
 	}
@@ -65,7 +68,7 @@ func ClaimOneWithLimits(ctx context.Context, pool *pgxpool.Pool, workerID string
 	}
 	c.WorkerID = workerID
 	c.Timeout = time.Duration(timeoutMS) * time.Millisecond
-	tag, err := tx.Exec(ctx, `UPDATE endpoint_circuits SET active_claims=active_claims+1,probe_delivery_id=CASE WHEN open_until IS NOT NULL AND open_until<=now() THEN $2 ELSE probe_delivery_id END,updated_at=now() WHERE endpoint_id=$1 AND organization_id=$3`, c.EndpointID, c.ID, c.OrganizationID)
+	tag, err := tx.Exec(ctx, `UPDATE endpoint_circuits SET active_claims=active_claims+1,probe_delivery_id=CASE WHEN open_until IS NOT NULL AND open_until<=now() THEN $2 ELSE probe_delivery_id END,next_rate_at=CASE WHEN $4::integer>0 THEN clock_timestamp()+interval '60 seconds'/$4::double precision ELSE NULL END,updated_at=now() WHERE endpoint_id=$1 AND organization_id=$3`, c.EndpointID, c.ID, c.OrganizationID, c.RateLimitPerMinute)
 	if err != nil {
 		return nil, err
 	}
@@ -141,13 +144,13 @@ func ReclaimExpired(ctx context.Context, pool *pgxpool.Pool, limit int) (int, er
 		if tag.RowsAffected() != 1 {
 			return 0, fmt.Errorf("tenant claim accounting missing during reclaim")
 		}
-		_, err = tx.Exec(ctx, `UPDATE delivery_attempts SET finished_at=now(),error_code='lease_expired' WHERE delivery_id=$1 AND organization_id=$2 AND attempt_number=$3 AND finished_at IS NULL`, x.id, x.org, x.attempt)
-		if err != nil {
-			return 0, err
-		}
 		status := "retry_wait"
 		if x.attempt >= x.max {
 			status = "exhausted"
+		}
+		_, err = tx.Exec(ctx, `UPDATE delivery_attempts SET finished_at=now(),error_code='lease_expired',retry_scheduled_at=CASE WHEN $4='retry_wait' THEN now() END WHERE delivery_id=$1 AND organization_id=$2 AND attempt_number=$3 AND finished_at IS NULL`, x.id, x.org, x.attempt, status)
+		if err != nil {
+			return 0, err
 		}
 		_, err = tx.Exec(ctx, `UPDATE deliveries SET status=$2,lease_owner=NULL,lease_expires_at=NULL,lease_generation=lease_generation+1,next_attempt_at=now(),last_error_code='lease_expired',completed_at=CASE WHEN $2='exhausted' THEN now() ELSE NULL END,updated_at=now() WHERE id=$1`, x.id, status)
 		if err != nil {
@@ -162,5 +165,6 @@ func ReclaimExpired(ctx context.Context, pool *pgxpool.Pool, limit int) (int, er
 	if err = tx.Commit(ctx); err != nil {
 		return 0, err
 	}
+	observability.RecordReclaims(ctx, len(items))
 	return len(items), nil
 }

@@ -20,7 +20,7 @@ export default function DemoPage() {
       <Link href="/" className="demo-back"><ArrowLeft size={15} aria-hidden="true" /> Back to RelayForge</Link>
       <div className="demo-intro"><span className="landing-kicker">PUBLIC GUIDED DEMO</span><h1>Watch a webhook<br /><span>make it through.</span></h1><p>Follow an event from durable acceptance to a receiver that fails once, then succeeds. Every screen below is an illustration of RelayForge’s behavior. It makes no live API calls.</p></div>
       <GuidedDemo />
-      <div className="demo-after"><div><span className="landing-kicker">WANT TO GO DEEPER?</span><h2>See the system behind the story.</h2><p>The README shows the real Compose demo, failure tests, wire contract, and benchmark commands you can reproduce locally.</p></div><a href="https://github.com/FinzyPHINZY/relayforge#run-locally" target="_blank" rel="noopener noreferrer" className="landing-button landing-button-secondary">Explore the source <ArrowUpRight size={17} aria-hidden="true" /></a></div>
+      <div className="demo-after"><div><span className="landing-kicker">WANT TO GO DEEPER?</span><h2>See the system behind the story.</h2><p>Follow the durable delivery path, the crash window that can produce duplicates, and the measured 10,000-event run.</p></div><Link href="/how-it-works" className="landing-button landing-button-secondary">How RelayForge works <ArrowUpRight size={17} aria-hidden="true" /></Link></div>
     </main>
   </div>;
 }

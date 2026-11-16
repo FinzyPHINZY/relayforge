@@ -3,6 +3,8 @@ package delivery
 import (
 	"context"
 	"fmt"
+	"log/slog"
+	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/otel"
@@ -12,6 +14,7 @@ import (
 type outboxItem struct {
 	id, organizationID, eventID, eventType string
 	traceparent                            *string
+	availableAt                            time.Time
 }
 
 // DispatchBatch materializes each pending outbox event and marks it dispatched
@@ -25,14 +28,14 @@ func DispatchBatch(ctx context.Context, pool *pgxpool.Pool, limit int) (int, err
 		return 0, err
 	}
 	defer tx.Rollback(ctx)
-	rows, err := tx.Query(ctx, `SELECT o.id,o.organization_id,o.event_id,e.event_type,e.traceparent FROM outbox o JOIN events e ON e.id=o.event_id AND e.organization_id=o.organization_id JOIN organizations org ON org.id=o.organization_id WHERE o.status='pending' AND o.available_at<=now() AND org.status='active' ORDER BY o.available_at,o.id FOR UPDATE OF o SKIP LOCKED FOR SHARE OF org LIMIT $1`, limit)
+	rows, err := tx.Query(ctx, `SELECT o.id,o.organization_id,o.event_id,e.event_type,e.traceparent,o.available_at FROM outbox o JOIN events e ON e.id=o.event_id AND e.organization_id=o.organization_id JOIN organizations org ON org.id=o.organization_id WHERE o.status='pending' AND o.available_at<=now() AND org.status='active' ORDER BY o.available_at,o.id FOR UPDATE OF o SKIP LOCKED FOR SHARE OF org LIMIT $1`, limit)
 	if err != nil {
 		return 0, err
 	}
 	items := make([]outboxItem, 0, limit)
 	for rows.Next() {
 		var x outboxItem
-		if err = rows.Scan(&x.id, &x.organizationID, &x.eventID, &x.eventType, &x.traceparent); err != nil {
+		if err = rows.Scan(&x.id, &x.organizationID, &x.eventID, &x.eventType, &x.traceparent, &x.availableAt); err != nil {
 			rows.Close()
 			return 0, err
 		}
@@ -63,5 +66,17 @@ func DispatchBatch(ctx context.Context, pool *pgxpool.Pool, limit int) (int, err
 	if err = tx.Commit(ctx); err != nil {
 		return 0, err
 	}
+	for _, item := range items {
+		itemCtx := observability.ContextWithTraceParent(ctx, value(item.traceparent))
+		observability.RecordDispatch(itemCtx, time.Since(item.availableAt))
+		slog.InfoContext(itemCtx, "outbox dispatched", "event_id", item.eventID, "outbox_id", item.id, "dispatch_lag_ms", time.Since(item.availableAt).Milliseconds())
+	}
 	return len(items), nil
+}
+
+func value(s *string) string {
+	if s != nil {
+		return *s
+	}
+	return ""
 }

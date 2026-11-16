@@ -78,6 +78,10 @@ func (s *Server) reviewDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
+	if err = writeAudit(r, tx, "delivery.reviewed", "delivery", deliveryID, map[string]any{"review_status": in.Status}); err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
 	if err = tx.Commit(ctx); err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return

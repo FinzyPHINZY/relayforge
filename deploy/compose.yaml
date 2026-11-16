@@ -46,6 +46,7 @@ services:
       EVENT_RATE_LIMIT_PER_MINUTE: ${EVENT_RATE_LIMIT_PER_MINUTE:-600}
       MANAGEMENT_RATE_LIMIT_PER_MINUTE: ${MANAGEMENT_RATE_LIMIT_PER_MINUTE:-120}
       REGION_ROLE: ${REGION_ROLE:-primary}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       migrate: {condition: service_completed_successfully}
       redis: {condition: service_healthy}
@@ -63,6 +64,7 @@ services:
       DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL}
       RETENTION_DAYS: ${RETENTION_DAYS:-30}
       REGION_ROLE: ${REGION_ROLE:-primary}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     depends_on:
       migrate: {condition: service_completed_successfully}
     healthcheck:
@@ -80,10 +82,11 @@ services:
       ENCRYPTION_KEY_BASE64: ${ENCRYPTION_KEY_BASE64:?Set ENCRYPTION_KEY_BASE64}
       ENCRYPTION_KEY_ID: ${ENCRYPTION_KEY_ID:?Set ENCRYPTION_KEY_ID}
       WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-10}
-      ENDPOINT_CONCURRENCY_LIMIT: ${ENDPOINT_CONCURRENCY_LIMIT:-2}
+      ENDPOINT_CONCURRENCY_LIMIT: ${ENDPOINT_CONCURRENCY_LIMIT:-100}
       TENANT_CONCURRENCY_LIMIT: ${TENANT_CONCURRENCY_LIMIT:-10}
       WORKER_DRAIN_SECONDS: ${WORKER_DRAIN_SECONDS:-35}
       REGION_ROLE: ${REGION_ROLE:-primary}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
     stop_grace_period: 45s
     depends_on:
       migrate: {condition: service_completed_successfully}
@@ -138,6 +141,8 @@ services:
       MONITOR_WEBHOOK_URL: ${MONITOR_WEBHOOK_URL:-}
       MONITOR_BACKLOG_AGE_SECONDS: ${MONITOR_BACKLOG_AGE_SECONDS:-300}
       MONITOR_INTERVAL_SECONDS: ${MONITOR_INTERVAL_SECONDS:-60}
+      MONITOR_FAILURE_THRESHOLD: ${MONITOR_FAILURE_THRESHOLD:-5}
+      MONITOR_UNREVIEWED_THRESHOLD: ${MONITOR_UNREVIEWED_THRESHOLD:-1}
     depends_on:
       api: {condition: service_healthy}
       dispatcher: {condition: service_started}

@@ -57,7 +57,7 @@ func main() {
 		}
 		concurrency = n
 	}
-	endpointConcurrency := 2
+	endpointConcurrency := 100
 	if raw := os.Getenv("ENDPOINT_CONCURRENCY_LIMIT"); raw != "" {
 		n, e := strconv.Atoi(raw)
 		if e != nil || n < 1 || n > 100 {

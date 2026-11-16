@@ -11,10 +11,13 @@ import (
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"webhook_delivery/internal/monitor"
+	"webhook_delivery/internal/observability"
 	"webhook_delivery/internal/security"
 )
 
 func main() {
+	shutdownTracing := observability.Start("relayforge-monitor")
+	defer shutdownTracing(context.Background())
 	databaseURL := os.Getenv("DATABASE_URL")
 	webhookURL := os.Getenv("MONITOR_WEBHOOK_URL")
 	if databaseURL == "" || webhookURL == "" {
@@ -38,12 +41,14 @@ func main() {
 	defer pool.Close()
 	backlogSeconds := envSeconds("MONITOR_BACKLOG_AGE_SECONDS", 300, 60, 86400)
 	intervalSeconds := envSeconds("MONITOR_INTERVAL_SECONDS", 60, 15, 3600)
+	failureLimit := envSeconds("MONITOR_FAILURE_THRESHOLD", 5, 1, 1000000)
+	unreviewedLimit := envSeconds("MONITOR_UNREVIEWED_THRESHOLD", 1, 1, 1000000)
 	checker := monitor.Checker{DB: pool, Services: map[string]string{
 		"api": "http://api:8081/health/ready", "dispatcher": "http://dispatcher:8081/health/ready", "worker": "http://worker:8081/health/ready",
-	}, BacklogAgeLimit: time.Duration(backlogSeconds) * time.Second}
+	}, BacklogAgeLimit: time.Duration(backlogSeconds) * time.Second, RecentFailureLimit: int64(failureLimit), UnreviewedLimit: int64(unreviewedLimit)}
 	notifier := monitor.WebhookNotifier{URL: webhookURL}
 	m := monitor.Monitor{Check: checker.Check, Notify: notifier.Notify}
-	slog.Info("monitor started", "interval_seconds", intervalSeconds, "backlog_age_seconds", backlogSeconds)
+	slog.Info("monitor started", "interval_seconds", intervalSeconds, "backlog_age_seconds", backlogSeconds, "recent_failure_threshold", failureLimit, "unreviewed_threshold", unreviewedLimit)
 	m.Run(ctx, time.Duration(intervalSeconds)*time.Second)
 }
 

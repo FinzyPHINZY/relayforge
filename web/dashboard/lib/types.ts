@@ -21,6 +21,10 @@ export type Endpoint = {
   event_types: string[];
   timeout_ms: number;
   max_attempts: number;
+  concurrency_limit: number;
+  rate_limit_per_minute: number;
+  next_rate_at?: string;
+  signing_secrets: { id: string; state: "active" | "overlap" | "retired"; created_at: string; overlap_until?: string; retired_at?: string }[];
   circuit_status: "closed" | "open" | "half_open";
   circuit_open_until?: string;
   created_at: string;
@@ -31,10 +35,33 @@ export type Endpoint = {
 
 export type Principal = { role: "owner" | "admin" | "operator" | "viewer"; scopes: string[] };
 export type TeamMember = { id: string; name: string; email: string; role: "admin" | "operator" | "viewer"; status: "active" | "suspended"; created_at: string };
+export type AuditEvent = { id: string; actor_api_key_id?: string; actor_key_name: string; actor_role: string; action: string; target_type: "organization" | "api_key" | "team_member" | "endpoint" | "delivery" | "event"; target_id: string; details: Record<string, unknown>; created_at: string };
 export type AnalyticsBucket = { start: string; attempts: number; succeeded: number; failed: number; p50_duration_ms: number | null; p95_duration_ms: number | null };
 export type DeliveryAnalytics = { window: "24h" | "7d" | "30d"; buckets: AnalyticsBucket[] };
+export type OverviewWindow = "24h" | "7d" | "30d";
+export type OverviewBucket = {
+  start: string;
+  events: number;
+  succeeded: number;
+  exhausted: number;
+  cancelled: number;
+  attempts: number;
+  failed_attempts: number;
+  retries: number;
+  p50_latency_ms: number | null;
+  p95_latency_ms: number | null;
+};
+export type OverviewAnalytics = {
+  window: OverviewWindow;
+  from: string;
+  to: string;
+  bucket_unit: "1 hour" | "1 day";
+  totals: Omit<OverviewBucket, "start" | "p50_latency_ms" | "p95_latency_ms">;
+  buckets: OverviewBucket[];
+};
 
-export type Event = { id: string; type: string; status: string; created_at: string; data?: unknown };
+export type Event = { id: string; type: string; status: string; created_at: string };
+export type EventListItem = Event & { delivery_summary: { total: number; succeeded: number; exhausted: number; pending: number; processing: number; retry_wait: number; cancelled: number } };
 
 export type Delivery = {
   id: string;
@@ -49,7 +76,9 @@ export type Delivery = {
   last_http_status?: number;
   last_error_code?: string;
   created_at: string;
+  updated_at: string;
   completed_at?: string;
+  next_attempt_at: string;
   review_status?: "unreviewed" | "investigating" | "resolved";
 };
 
@@ -65,4 +94,7 @@ export type Attempt = {
   outcome: string;
   error_code?: string;
   response_excerpt?: string;
+  retry_scheduled_at?: string;
 };
+
+export type DeliveryDetail = { delivery: Delivery; attempts: Attempt[]; review_history: ReviewHistoryEntry[]; event_accepted_at: string; outbox_dispatched_at?: string };

@@ -36,6 +36,10 @@ func TestEndpointVerificationGatesDelivery(t *testing.T) {
 	if resp.StatusCode != 200 {
 		t.Fatalf("verify status=%d body=%s", resp.StatusCode, content)
 	}
+	var verifiedAudits int
+	if err := pool.QueryRow(t.Context(), `SELECT count(*) FROM audit_events WHERE organization_id=$1 AND target_id=$2 AND action='endpoint.verified'`, org, endpointID).Scan(&verifiedAudits); err != nil || verifiedAudits != 1 {
+		t.Fatalf("verification audit count=%d err=%v", verifiedAudits, err)
+	}
 	publishDeliveryEvent(t, server, key)
 	if count, err := delivery.DispatchBatch(t.Context(), pool, 50); err != nil || count != 1 {
 		t.Fatalf("dispatch after verify=%d err=%v", count, err)

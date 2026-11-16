@@ -14,10 +14,12 @@ import (
 )
 
 type Checker struct {
-	DB              *pgxpool.Pool
-	Services        map[string]string
-	BacklogAgeLimit time.Duration
-	HTTPClient      *http.Client
+	DB                 *pgxpool.Pool
+	Services           map[string]string
+	BacklogAgeLimit    time.Duration
+	RecentFailureLimit int64
+	UnreviewedLimit    int64
+	HTTPClient         *http.Client
 }
 
 func (c Checker) Check(ctx context.Context) []string {
@@ -48,15 +50,24 @@ func (c Checker) Check(ctx context.Context) []string {
 	queryCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 	defer cancel()
 	var age float64
+	var recentFailures, unreviewed int64
 	err := c.DB.QueryRow(queryCtx, `SELECT GREATEST(
   COALESCE((SELECT EXTRACT(EPOCH FROM now()-min(next_attempt_at)) FROM deliveries WHERE status IN ('pending','retry_wait') AND next_attempt_at<=now()),0),
   COALESCE((SELECT EXTRACT(EPOCH FROM now()-min(available_at)) FROM outbox WHERE status='pending' AND available_at<=now()),0)
-)::double precision`).Scan(&age)
+)::double precision,
+(SELECT count(*) FROM delivery_attempts WHERE finished_at>=now()-interval '5 minutes' AND outcome IS DISTINCT FROM 'success'),
+(SELECT count(*) FROM deliveries d WHERE d.status='exhausted' AND NOT EXISTS (SELECT 1 FROM delivery_reviews r WHERE r.delivery_id=d.id AND r.organization_id=d.organization_id))`).Scan(&age, &recentFailures, &unreviewed)
 	if err != nil {
 		return append(reasons, "database unavailable")
 	}
 	if age > c.BacklogAgeLimit.Seconds() {
 		reasons = append(reasons, fmt.Sprintf("due delivery backlog age exceeds %.0fs", c.BacklogAgeLimit.Seconds()))
+	}
+	if c.RecentFailureLimit > 0 && recentFailures >= c.RecentFailureLimit {
+		reasons = append(reasons, fmt.Sprintf("at least %d failed attempts in 5 minutes", c.RecentFailureLimit))
+	}
+	if c.UnreviewedLimit > 0 && unreviewed >= c.UnreviewedLimit {
+		reasons = append(reasons, fmt.Sprintf("at least %d exhausted deliveries need review", c.UnreviewedLimit))
 	}
 	return reasons
 }

@@ -49,3 +49,26 @@ func TestPinnedClientRevalidatesEveryDNSAnswer(t *testing.T) {
 		t.Fatal("accepted IPv4-mapped loopback")
 	}
 }
+
+func TestPinnedClientRejectsDNSRebindingBetweenAttempts(t *testing.T) {
+	lookups := 0
+	lookup := func(_ context.Context, _ string) ([]net.IPAddr, error) {
+		lookups++
+		if lookups == 1 {
+			return []net.IPAddr{{IP: net.ParseIP("8.8.8.8")}}, nil
+		}
+		return []net.IPAddr{{IP: net.ParseIP("169.254.169.254")}}, nil
+	}
+	for attempt := 1; attempt <= 2; attempt++ {
+		_, err := pinnedClientWithLookup(context.Background(), "https://subscriber.example/hook", time.Second, false, "", lookup)
+		if attempt == 1 && err != nil {
+			t.Fatalf("public first resolution rejected: %v", err)
+		}
+		if attempt == 2 && err == nil {
+			t.Fatal("metadata address accepted after DNS rebinding")
+		}
+	}
+	if lookups != 2 {
+		t.Fatalf("DNS lookups=%d", lookups)
+	}
+}

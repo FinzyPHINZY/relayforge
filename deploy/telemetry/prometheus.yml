@@ -1,0 +1,12 @@
+global:
+  scrape_interval: 30s
+scrape_configs:
+  - job_name: relayforge-api
+    static_configs:
+      - targets: ["api:8081"]
+  - job_name: relayforge-dispatcher
+    static_configs:
+      - targets: ["dispatcher:8081"]
+  - job_name: relayforge-worker
+    static_configs:
+      - targets: ["worker:8081"]

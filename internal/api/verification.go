@@ -42,7 +42,7 @@ func (s *Server) verifyEndpoint(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 	client, err := security.PinnedClientWithDemo(ctx, destination, 5*time.Second, s.AllowHTTPTest, s.DemoReceiverOrigin)
 	if err != nil {
-		problem(w, 422, "destination_blocked", "Destination cannot be verified")
+		problem(w, 422, "destination_blocked", "Receiver destination is not allowed; update the endpoint URL and try again")
 		return
 	}
 	var random [32]byte
@@ -68,13 +68,27 @@ func (s *Server) verifyEndpoint(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "verification_failed", "Receiver did not echo the challenge")
 		return
 	}
-	tag, err := s.DB.Exec(r.Context(), `UPDATE endpoints SET verified_at=now(),updated_at=now() WHERE id=$1 AND organization_id=$2 AND url=$3 AND status<>'disabled' AND verification_required`, endpointID, tenant(r), destination)
+	tx, err := s.DB.Begin(r.Context())
+	if err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	defer tx.Rollback(r.Context())
+	tag, err := tx.Exec(r.Context(), `UPDATE endpoints SET verified_at=now(),updated_at=now() WHERE id=$1 AND organization_id=$2 AND url=$3 AND status<>'disabled' AND verification_required`, endpointID, tenant(r), destination)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
 	if tag.RowsAffected() != 1 {
 		problem(w, 409, "endpoint_changed", "Endpoint changed during verification; try again")
+		return
+	}
+	if err = writeAudit(r, tx, "endpoint.verified", "endpoint", endpointID, nil); err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	if err = tx.Commit(r.Context()); err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "verified"})
