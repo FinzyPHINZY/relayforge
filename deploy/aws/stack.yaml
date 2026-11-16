@@ -297,13 +297,6 @@ Resources:
       RoleArn: !GetAtt PipelineRole.Arn
       PipelineType: V2
       ExecutionMode: QUEUED
-      Triggers:
-        - ProviderType: CodeStarSourceConnection
-          GitConfiguration:
-            SourceActionName: GitHubMain
-            Push:
-              - Branches:
-                  Includes: [main]
       ArtifactStore:
         Type: S3
         Location: !Ref ReleaseBucketName
@@ -320,7 +313,7 @@ Resources:
                 ConnectionArn: !Ref GitHubConnectionArn
                 FullRepositoryId: !Ref RepositoryId
                 BranchName: main
-                DetectChanges: false
+                DetectChanges: true
               OutputArtifacts:
                 - Name: SourceCode
               RunOrder: 1
