@@ -1,7 +1,7 @@
 # RelayForge AWS deployment
 
-The `relayforge-prod` CloudFormation stack runs RelayForge on one EC2 host in
-`eu-north-1`. Its CodePipeline source is `FinzyPHINZY/relayforge` `main` through
+The `relayforge-prod` CloudFormation stack runs RelayForge on one
+`m7i-flex.large` EC2 host in `eu-north-1`. Its CodePipeline source is `FinzyPHINZY/relayforge` `main` through
 AWS CodeConnections. Each main commit runs the Go, dashboard, and SDK checks in
 CodeBuild. Only a passing build uploads that commit's source archive and sends a
 Systems Manager deployment command to the host. The instance keeps PostgreSQL
