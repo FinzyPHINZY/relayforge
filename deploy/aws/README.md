@@ -1,11 +1,12 @@
 # RelayForge AWS deployment
 
 The `relayforge-prod` CloudFormation stack runs RelayForge on one
-`m7i-flex.large` EC2 host in `eu-north-1`. Its CodePipeline source is `FinzyPHINZY/relayforge` `main` through
-AWS CodeConnections. Each main commit runs the Go, dashboard, and SDK checks in
-CodeBuild. Only a passing build uploads that commit's source archive and sends a
-Systems Manager deployment command to the host. The instance keeps PostgreSQL
-data in an encrypted EBS root volume and has no SSH ingress.
+`m7i-flex.large` EC2 host in `eu-north-1`. CodePipeline reads
+`FinzyPHINZY/relayforge` `main` through AWS CodeConnections. Each main commit
+is sent to CodeDeploy, whose `AfterInstall` hook runs the Go, dashboard, and
+SDK checks on the host. Only passing checks start the Compose services; a
+health check then completes the deployment. The instance keeps PostgreSQL data
+in an encrypted EBS root volume and has no SSH ingress.
 
 ## One-time setup
 
@@ -27,7 +28,7 @@ data in an encrypted EBS root volume and has no SSH ingress.
    propagate; Caddy obtains HTTPS certificates automatically.
 4. Merge this deployment configuration to `main`. The pipeline will check and
    deploy the merged commit. Check `relayforge-prod-pipeline` in CodePipeline
-   and the `relayforge-prod-checks` CodeBuild logs.
+   and the CodeDeploy deployment event logs.
 5. Verify `https://relayforge.site/` and
    `https://api.relayforge.site/health/ready`.
 
@@ -50,7 +51,6 @@ mode `0600`. Back up the PostgreSQL volume and the encryption key together;
 the single EC2 host is not a high-availability deployment. Do not delete the
 instance or root volume without first exporting and verifying a database backup.
 
-Use Systems Manager Session Manager for maintenance. The current deployed Git
-SHA is recorded at `/opt/relayforge/current-sha`. For operator access, run
+Use Systems Manager Session Manager for maintenance. For operator access, run
 `cmd/bootstrap` inside the API image on the instance and store the resulting
 API key privately; never put it in GitHub or CloudFormation parameters.
