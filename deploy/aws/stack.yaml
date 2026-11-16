@@ -1,0 +1,349 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: RelayForge single-host deployment and GitHub-driven check-and-deploy pipeline in eu-north-1.
+Metadata:
+  AWSToolsMetrics:
+    AWSAgentToolkit: aws-cloudformation@3
+Parameters:
+  GitHubConnectionArn:
+    Type: String
+    Description: Authorized CodeConnections GitHub connection ARN.
+  ReleaseBucketName:
+    Type: String
+    Default: relayforge-prod-releasebucket-kxlksa16xh5g
+    Description: Private encrypted bucket retained from the initial stack attempt.
+  HostedZoneId:
+    Type: String
+    Default: Z00940573MAD9NAUK3KP0
+    Description: RelayForge Route 53 hosted zone retained from the initial stack attempt.
+  RepositoryId:
+    Type: String
+    Default: FinzyPHINZY/relayforge
+  DashboardDomain:
+    Type: String
+    Default: relayforge.site
+  ApiDomain:
+    Type: String
+    Default: api.relayforge.site
+  InstanceType:
+    Type: String
+    Default: m7i-flex.large
+  LatestAmi:
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+Resources:
+  ReleaseBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Rejects plaintext transport to deployment artifacts.
+        must: Keep HTTPS enforcement.
+    Properties:
+      Bucket: !Ref ReleaseBucketName
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource:
+              - !Sub 'arn:aws:s3:::${ReleaseBucketName}'
+              - !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
+            Condition:
+              Bool:
+                aws:SecureTransport: 'false'
+  HostSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Publishes only HTTP challenge and HTTPS through Caddy; administration uses SSM.
+        must: Never open SSH or database ports.
+    Properties:
+      GroupDescription: RelayForge HTTPS ingress; no SSH
+      VpcId: vpc-07e46ab20b5c84c2c
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 80
+          ToPort: 80
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: relayforge-host
+  HostRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Lets the deployment host receive SSM commands and read release archives.
+        must: Do not grant repository or broad S3 access.
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore
+      Policies:
+        - PolicyName: read-releases
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
+  HostProfile:
+    Type: AWS::IAM::InstanceProfile
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Attaches SSM and release-read credentials to the EC2 host.
+        must: Use the host role only.
+    Properties:
+      Roles: [!Ref HostRole]
+  Host:
+    Type: AWS::EC2::Instance
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Runs the existing Compose application, PostgreSQL, Redis, and HTTPS proxy.
+        must: Preserve the instance and its encrypted root volume until data migration is planned.
+    Properties:
+      ImageId: !Ref LatestAmi
+      InstanceType: !Ref InstanceType
+      IamInstanceProfile: !Ref HostProfile
+      SubnetId: subnet-051dd2090ee8b5f84
+      SecurityGroupIds: [!Ref HostSecurityGroup]
+      MetadataOptions:
+        HttpEndpoint: enabled
+        HttpTokens: required
+        HttpPutResponseHopLimit: 2
+      BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            VolumeSize: 50
+            VolumeType: gp3
+            Encrypted: true
+            DeleteOnTermination: false
+      Tags:
+        - Key: Name
+          Value: relayforge-app
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          set -euo pipefail
+          dnf update -y
+          dnf install -y docker ruby wget openssl
+          systemctl enable --now docker
+          usermod -aG docker ec2-user
+          mkdir -p /usr/local/lib/docker/cli-plugins /etc/relayforge /opt/relayforge/releases
+          curl -fsSL https://github.com/docker/compose/releases/download/v2.39.4/docker-compose-linux-x86_64 -o /usr/local/lib/docker/cli-plugins/docker-compose
+          chmod 0755 /usr/local/lib/docker/cli-plugins/docker-compose
+          password=$(openssl rand -hex 24)
+          printf '%s' "$password" >/etc/relayforge/postgres_password
+          chmod 0600 /etc/relayforge/postgres_password
+          encryption_key=$(openssl rand -base64 32)
+          session_key=$(openssl rand -base64 32)
+          cat >/etc/relayforge/relayforge.env <<EOF
+          DB_SECRET_PATH=/etc/relayforge/postgres_password
+          DATABASE_URL=postgres://webhooks:$password@postgres:5432/webhooks?sslmode=disable
+          ENCRYPTION_KEY_BASE64=$encryption_key
+          ENCRYPTION_KEY_ID=aws-v1
+          DASHBOARD_SESSION_KEY=$session_key
+          DASHBOARD_SECURE_COOKIES=true
+          RELAYFORGE_DASHBOARD_DOMAIN=${DashboardDomain}
+          RELAYFORGE_API_DOMAIN=${ApiDomain}
+          COMPOSE_PROFILES=public
+          EOF
+          chmod 0600 /etc/relayforge/relayforge.env
+          cd /tmp
+          curl -fsSL https://aws-codedeploy-eu-north-1.s3.eu-north-1.amazonaws.com/latest/install -o codedeploy-install
+          chmod 0755 codedeploy-install
+          ./codedeploy-install auto
+          systemctl enable --now codedeploy-agent
+  HostAddress:
+    Type: AWS::EC2::EIP
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Keeps the two Namecheap DNS A records stable through host restarts.
+        must: Keep associated with the deployment host.
+    Properties:
+      Domain: vpc
+      InstanceId: !Ref Host
+  DashboardRecord:
+    Type: AWS::Route53::RecordSet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Directs the dashboard domain to the fixed EC2 address.
+        must: Keep aligned with HostAddress.
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref DashboardDomain
+      Type: A
+      TTL: '300'
+      ResourceRecords: [!Ref HostAddress]
+  ApiRecord:
+    Type: AWS::Route53::RecordSet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Directs the API subdomain to the fixed EC2 address.
+        must: Keep aligned with HostAddress.
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !Ref ApiDomain
+      Type: A
+      TTL: '300'
+      ResourceRecords: [!Ref HostAddress]
+  DeploymentRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Lets CodeDeploy coordinate in-place deployment to the tagged host.
+        must: Trust only the CodeDeploy service.
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codedeploy.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSCodeDeployRole
+  DeploymentApplication:
+    Type: AWS::CodeDeploy::Application
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Receives the GitHub source artifact from CodePipeline.
+        must: Use EC2 in-place deployments in eu-north-1.
+    Properties:
+      ApplicationName: !Sub '${AWS::StackName}-app'
+      ComputePlatform: Server
+  DeploymentGroup:
+    Type: AWS::CodeDeploy::DeploymentGroup
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Deploys only to the RelayForge EC2 host after its AppSpec checks pass.
+        must: Keep deployment failure rollback enabled.
+    Properties:
+      ApplicationName: !Ref DeploymentApplication
+      DeploymentGroupName: !Sub '${AWS::StackName}-host'
+      DeploymentConfigName: CodeDeployDefault.AllAtOnce
+      ServiceRoleArn: !GetAtt DeploymentRole.Arn
+      Ec2TagFilters:
+        - Key: Name
+          Value: relayforge-app
+          Type: KEY_AND_VALUE
+      AutoRollbackConfiguration:
+        Enabled: true
+        Events: [DEPLOYMENT_FAILURE]
+  PipelineRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Reads GitHub main through CodeConnections and starts the CodeDeploy check-and-deploy action.
+        must: Restrict the connection and deployment application to this pipeline.
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: source-and-deploy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: codeconnections:UseConnection
+                Resource: !Ref GitHubConnectionArn
+                Condition:
+                  StringEquals:
+                    codeconnections:FullRepositoryId: !Ref RepositoryId
+              - Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:GetBucketVersioning]
+                Resource:
+                  - !Sub 'arn:aws:s3:::${ReleaseBucketName}'
+                  - !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
+              - Effect: Allow
+                Action:
+                  - codedeploy:CreateDeployment
+                  - codedeploy:GetApplication
+                  - codedeploy:GetDeployment
+                  - codedeploy:RegisterApplicationRevision
+                  - codedeploy:ListDeployments
+                  - codedeploy:ListDeploymentGroups
+                  - codedeploy:GetDeploymentGroup
+                Resource:
+                  - !Sub 'arn:aws:codedeploy:eu-north-1:${AWS::AccountId}:application:${DeploymentApplication}'
+                  - !Sub 'arn:aws:codedeploy:eu-north-1:${AWS::AccountId}:deploymentgroup:${DeploymentApplication}/${DeploymentGroup}'
+              - Effect: Allow
+                Action: codedeploy:GetDeploymentConfig
+                Resource: !Sub 'arn:aws:codedeploy:eu-north-1:${AWS::AccountId}:deploymentconfig:CodeDeployDefault.AllAtOnce'
+  Pipeline:
+    Type: AWS::CodePipeline::Pipeline
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Triggers on each main merge, then runs checks and deploys that commit.
+        must: Keep source restricted to main and one execution at a time.
+    Properties:
+      Name: !Sub '${AWS::StackName}-pipeline'
+      RoleArn: !GetAtt PipelineRole.Arn
+      PipelineType: V2
+      ExecutionMode: QUEUED
+      Triggers:
+        - ProviderType: CodeStarSourceConnection
+          GitConfiguration:
+            SourceActionName: GitHubMain
+            Push:
+              - Branches:
+                  Includes: [__relayforge_ci_only__]
+      ArtifactStore:
+        Type: S3
+        Location: !Ref ReleaseBucketName
+      Stages:
+        - Name: Source
+          Actions:
+            - Name: GitHubMain
+              ActionTypeId:
+                Category: Source
+                Owner: AWS
+                Provider: CodeStarSourceConnection
+                Version: '1'
+              Configuration:
+                ConnectionArn: !Ref GitHubConnectionArn
+                FullRepositoryId: !Ref RepositoryId
+                BranchName: main
+                DetectChanges: false
+              OutputArtifacts:
+                - Name: SourceCode
+              RunOrder: 1
+        - Name: CheckAndDeploy
+          Actions:
+            - Name: ChecksThenDeploy
+              ActionTypeId:
+                Category: Deploy
+                Owner: AWS
+                Provider: CodeDeploy
+                Version: '1'
+              Configuration:
+                ApplicationName: !Ref DeploymentApplication
+                DeploymentGroupName: !Ref DeploymentGroup
+              InputArtifacts:
+                - Name: SourceCode
+              RunOrder: 1
+Outputs:
+  InstanceId:
+    Value: !Ref Host
+  PublicIp:
+    Value: !Ref HostAddress
+  RelayforgeZoneId:
+    Value: !Ref HostedZoneId
+  PipelineName:
+    Value: !Ref Pipeline

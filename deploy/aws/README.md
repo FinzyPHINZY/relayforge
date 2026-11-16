@@ -1,0 +1,64 @@
+# RelayForge AWS deployment
+
+The `relayforge-prod` CloudFormation stack runs RelayForge on one
+`m7i-flex.large` EC2 host in `eu-north-1`. CodePipeline reads
+`FinzyPHINZY/relayforge` `main` through AWS CodeConnections. Each main commit
+is sent to CodeDeploy, whose `AfterInstall` hook runs the Go, dashboard, and
+SDK checks on the host. Only passing checks start the Compose services; a
+health check then completes the deployment. The instance keeps PostgreSQL data
+in an encrypted EBS root volume and has no SSH ingress.
+
+GitHub branch protection requires the `test` check before a pull request can
+merge. On each push to `main`, the GitHub CI `deploy` job starts the AWS pipeline
+for that exact checked commit only after its `test` job passes, then waits for the deployment result. The
+`relayforge-ci-trigger` service identity can only start and read this pipeline;
+its policy is in `deploy/aws/ci-trigger-policy.json`, and its access key is
+stored in GitHub Actions repository secrets. Rotate that key through IAM and
+update both repository secrets when needed.
+
+## One-time setup
+
+1. Confirm the selected Region under AWS Settings → View all projects → Overview
+   → Additional Info → Region. The `project` CLI profile should show `eu-north-1`.
+2. Authorize the `relayforge-github` CodeConnections connection in the AWS
+   Management Console, then verify its status is `AVAILABLE`:
+
+   ```sh
+   aws codeconnections get-connection \
+     --connection-arn arn:aws:codeconnections:eu-north-1:895207966063:connection/1ace6d55-1daa-4ea7-a839-da8ef25d42c1 \
+     --profile project --region eu-north-1
+   ```
+
+3. In Namecheap, set the domain's nameservers to `ns-622.awsdns-13.net`,
+   `ns-1034.awsdns-01.org`, `ns-1848.awsdns-39.co.uk`, and
+   `ns-237.awsdns-29.com`. Route 53 already contains A records for `relayforge.site` and
+   `api.relayforge.site` pointing to the stack's Elastic IP. Wait for DNS to
+   propagate; Caddy obtains HTTPS certificates automatically.
+4. Merge this deployment configuration to `main`. The pipeline will check and
+   deploy the merged commit. Check `relayforge-prod-pipeline` in CodePipeline
+   and the CodeDeploy deployment event logs.
+5. Verify `https://relayforge.site/` and
+   `https://api.relayforge.site/health/ready`.
+
+## Maintenance
+
+The AWS CLI default profile is a different project. Always pass
+`--profile project --region eu-north-1` for this deployment. Stack source is
+`deploy/aws/stack.yaml`; apply changes with:
+
+```sh
+aws cloudformation deploy --template-file deploy/aws/stack.yaml \
+  --stack-name relayforge-prod --capabilities CAPABILITY_IAM \
+  --parameter-overrides GitHubConnectionArn=arn:aws:codeconnections:eu-north-1:895207966063:connection/1ace6d55-1daa-4ea7-a839-da8ef25d42c1 \
+  --profile project --region eu-north-1
+```
+
+Application secrets are generated on the instance in
+`/etc/relayforge/relayforge.env` and `/etc/relayforge/postgres_password` with
+mode `0600`. Back up the PostgreSQL volume and the encryption key together;
+the single EC2 host is not a high-availability deployment. Do not delete the
+instance or root volume without first exporting and verifying a database backup.
+
+Use Systems Manager Session Manager for maintenance. For operator access, run
+`cmd/bootstrap` inside the API image on the instance and store the resulting
+API key privately; never put it in GitHub or CloudFormation parameters.

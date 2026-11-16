@@ -1,5 +1,10 @@
 name: CI
-on: [push, pull_request, workflow_dispatch]
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -113,3 +118,39 @@ jobs:
       - name: Stop Compose demo
         if: always()
         run: docker compose --profile demo --profile dashboard down -v
+  deploy:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    steps:
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.RELAYFORGE_AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.RELAYFORGE_AWS_SECRET_ACCESS_KEY }}
+          aws-region: eu-north-1
+      - name: Deploy checked main commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          execution_id=$(aws codepipeline start-pipeline-execution \
+            --name relayforge-prod-pipeline \
+            --source-revisions "actionName=GitHubMain,revisionType=COMMIT_ID,revisionValue=$GITHUB_SHA" \
+            --client-request-token "$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" \
+            --query pipelineExecutionId --output text)
+          echo "Pipeline execution: $execution_id"
+          for attempt in {1..150}; do
+            status=$(aws codepipeline get-pipeline-execution --pipeline-name relayforge-prod-pipeline --pipeline-execution-id "$execution_id" --query 'pipelineExecution.status' --output text)
+            case "$status" in
+              Succeeded) exit 0 ;;
+              Failed|Cancelled|Stopped|Superseded)
+                echo "Pipeline execution ended with status: $status" >&2
+                exit 1
+                ;;
+            esac
+            sleep 30
+          done
+          echo "Pipeline execution did not complete within 75 minutes" >&2
+          exit 1
