@@ -8,8 +8,13 @@ SDK checks on the host. Only passing checks start the Compose services; a
 health check then completes the deployment. The instance keeps PostgreSQL data
 in an encrypted EBS root volume and has no SSH ingress.
 
-The GitHub connection source detects pushes to `main`. GitHub branch protection
-requires the `test` check before a pull request can merge.
+GitHub branch protection requires the `test` check before a pull request can
+merge. On each push to `main`, the GitHub CI `deploy` job starts the AWS pipeline
+for that exact checked commit only after its `test` job passes, then waits for the deployment result. The
+`relayforge-ci-trigger` service identity can only start and read this pipeline;
+its policy is in `deploy/aws/ci-trigger-policy.json`, and its access key is
+stored in GitHub Actions repository secrets. Rotate that key through IAM and
+update both repository secrets when needed.
 
 ## One-time setup
 

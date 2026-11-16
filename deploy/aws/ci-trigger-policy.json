@@ -1,0 +1,13 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "codepipeline:StartPipelineExecution",
+        "codepipeline:GetPipelineExecution"
+      ],
+      "Resource": "arn:aws:codepipeline:eu-north-1:895207966063:relayforge-prod-pipeline"
+    }
+  ]
+}
