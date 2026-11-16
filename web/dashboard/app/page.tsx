@@ -17,6 +17,10 @@ import {
   RadioTower,
   RotateCcw,
   ShieldCheck,
+  SlidersHorizontal,
+  Database,
+  ListFilter,
+  ScanSearch,
   ShoppingBag,
   Siren,
   Terminal,
@@ -40,17 +44,59 @@ const features = [
   },
   {
     number: "02",
+    icon: Building2,
+    title: "Every tenant has its own lane.",
+    body: "Organization-scoped keys, endpoints, events, deliveries, and metrics keep customer operations separate.",
+    tag: "Tenant isolation",
+  },
+  {
+    number: "03",
     icon: RotateCcw,
     title: "Failure has a next step.",
     body: "Bounded retries, lease recovery, circuit breakers, and manual replay keep failed deliveries visible and recoverable.",
     tag: "Built for recovery",
   },
   {
-    number: "03",
+    number: "04",
     icon: Fingerprint,
     title: "Every request is verifiable.",
     body: "Webhook bodies are signed with HMAC. Receivers can verify the signature and deduplicate by a stable delivery ID.",
     tag: "Signed delivery",
+  },
+  {
+    number: "05",
+    icon: SlidersHorizontal,
+    title: "Control the destination.",
+    body: "Manage subscriptions, verification, signing-secret rotation, timeout, retry, rate, and concurrency policies per endpoint.",
+    tag: "Endpoint controls",
+  },
+  {
+    number: "06",
+    icon: ScanSearch,
+    title: "Investigate the whole run.",
+    body: "See attempts, response codes, exact retry schedules, exhausted reviews, and replay history in one delivery timeline.",
+    tag: "Delivery inspector",
+  },
+  {
+    number: "07",
+    icon: ShieldCheck,
+    title: "Block unsafe destinations.",
+    body: "Public-IP checks, DNS revalidation, pinned connections, and blocked redirects protect outbound delivery.",
+    tag: "SSRF protection",
+  },
+  {
+    number: "08",
+    icon: Activity,
+    title: "See the system work.",
+    body: "OpenTelemetry traces and metrics, structured logs, and an operator monitor surface failures and queue health.",
+    tag: "Observability",
+  },
+  {
+    number: "09",
+    icon: Database,
+    title: "Account for every event.",
+    body: "Durable outbox and delivery records support reconciliation even after timeouts, worker crashes, or lost acknowledgments.",
+    tag: "Auditable outcomes",
   },
 ];
 
@@ -79,7 +125,7 @@ export default function LandingPage() {
           <Brand />
           <nav className="landing-nav" aria-label="Main navigation">
             <Link href="/demo">Guided demo</Link>
-            <a href="#how-it-works">How it works</a>
+            <Link href="/how-it-works">How it works</Link>
             <a href="#use-cases">Use cases</a>
             <a href="#capabilities">Capabilities</a>
             <a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer">GitHub <ArrowUpRight size={14} aria-hidden="true" /></a>
@@ -135,6 +181,22 @@ export default function LandingPage() {
           <span><Activity size={17} aria-hidden="true" /> Visible end to end</span>
         </div></div>
 
+        <section className="landing-scale" aria-labelledby="scale-heading">
+          <div className="landing-container landing-scale-inner">
+            <div className="landing-scale-copy">
+              <span className="landing-kicker">TESTED UNDER FAILURE</span>
+              <h2 id="scale-heading">10,000 events.<br /><em>Every one accounted for.</em></h2>
+              <p>In a measured two-tenant run, RelayForge accepted 10,000 events, dispatched 10,000 outbox records, and reached a terminal outcome for every delivery while a worker crashed and the receiver injected timeouts and HTTP failures.</p>
+              <Link href="/how-it-works#proof" className="landing-scale-link">Explore the measured proof <ArrowRight size={16} aria-hidden="true" /></Link>
+            </div>
+            <div className="landing-scale-results" aria-label="Measured reliability test results">
+              <div className="landing-scale-primary"><span>ACCEPTED &amp; ACCOUNTED FOR</span><strong>10,000 <small>/ 10,000</small></strong><p>Events, outbox records, and terminal deliveries reconciled.</p></div>
+              <div className="landing-scale-secondary"><div><strong>9,995</strong><span>succeeded</span></div><div><strong>5</strong><span>exhausted after injected HTTP 400</span></div><div><strong>11</strong><span>duplicate receipts observed</span></div></div>
+            </div>
+            <p className="landing-scale-footnote">One measured Testcontainers run on an 8-CPU host, Go 1.25.0, PostgreSQL 17 · 32 workers · 2m 48s total. At-least-once delivery can produce duplicates; receivers should deduplicate by <code>webhook-id</code>.</p>
+          </div>
+        </section>
+
         <section id="how-it-works" className="landing-section landing-container" aria-labelledby="how-heading">
           <div className="landing-section-head">
             <div><span className="landing-kicker">THE DELIVERY PATH</span><h2 id="how-heading">From event to endpoint.<br /><em>Without the guesswork.</em></h2></div>
@@ -145,6 +207,7 @@ export default function LandingPage() {
             <div className="landing-step"><span className="landing-step-index">02 / DELIVER</span><span className="landing-step-icon"><RadioTower size={23} aria-hidden="true" /></span><h3>We handle the handoff</h3><p>Matching endpoints receive signed HTTP requests. Workers track attempts and retry transient failures.</p></div>
             <div className="landing-step"><span className="landing-step-index">03 / RECOVER</span><span className="landing-step-icon"><Activity size={23} aria-hidden="true" /></span><h3>See what happened</h3><p>Inspect every attempt, review exhausted deliveries, and replay when the receiver is ready.</p></div>
           </div>
+          <Link href="/how-it-works" className="landing-scale-link">See the complete delivery path <ArrowRight size={16} aria-hidden="true" /></Link>
         </section>
 
         <section id="use-cases" className="landing-section landing-use-cases" aria-labelledby="use-cases-heading">
@@ -163,16 +226,25 @@ export default function LandingPage() {
             </div>
             <div className="landing-feature-grid">
               {features.map(({ number, icon: Icon, title, body, tag }) => <article className="landing-feature" key={number}>
-                <div className="landing-feature-top"><span>{number} / 03</span><Icon size={22} strokeWidth={1.7} aria-hidden="true" /></div>
+                <div className="landing-feature-top"><span>{number} / {String(features.length).padStart(2, "0")}</span><Icon size={22} strokeWidth={1.7} aria-hidden="true" /></div>
                 <h3>{title}</h3><p>{body}</p><span className="landing-feature-tag"><Check size={13} aria-hidden="true" /> {tag}</span>
               </article>)}
+            </div>
+            <div className="landing-console-guide">
+              <div><span className="landing-kicker">THE OPERATOR CONSOLE</span><h3>Four views. One delivery story.</h3><p>Follow aggregate health, find an event, configure the endpoint, and inspect the exact delivery run.</p></div>
+              <ol>
+                <li><Activity size={18} aria-hidden="true" /><span><strong>Overview</strong><small>Success, failures, retries, throughput, and latency.</small></span></li>
+                <li><ListFilter size={18} aria-hidden="true" /><span><strong>Event explorer</strong><small>Search, filter, and inspect event history.</small></span></li>
+                <li><SlidersHorizontal size={18} aria-hidden="true" /><span><strong>Endpoint management</strong><small>Subscriptions, secrets, and delivery policies.</small></span></li>
+                <li><ScanSearch size={18} aria-hidden="true" /><span><strong>Delivery inspector</strong><small>Attempts, retry timeline, review, and replay.</small></span></li>
+              </ol>
             </div>
             <div className="landing-honest-note"><span className="landing-honest-icon">i</span><p><strong>A clear guarantee.</strong> HTTP webhook delivery is at least once. A receiver may see a duplicate, so it should deduplicate using the stable <code>webhook-id</code>.</p></div>
           </div>
         </section>
 
         <section className="landing-final landing-container" aria-labelledby="final-heading">
-          <div className="landing-final-panel"><div className="landing-final-glow" /><span className="landing-kicker">READY TO EXPLORE?</span><h2 id="final-heading">Build with confidence.<br /><em>Operate with clarity.</em></h2><p>See the delivery pipeline in action, inspect its behavior, and make every webhook accountable.</p><div className="landing-final-actions"><Link href="/demo" className="landing-button landing-button-primary">Explore the demo <ArrowUpRight size={18} aria-hidden="true" /></Link><a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer" className="landing-final-link">View on GitHub <ArrowRight size={17} aria-hidden="true" /></a></div></div>
+          <div className="landing-final-panel"><div className="landing-final-glow" /><span className="landing-kicker">READY TO EXPLORE?</span><h2 id="final-heading">Build with confidence.<br /><em>Operate with clarity.</em></h2><p>See the delivery pipeline in action, inspect its behavior, and make every webhook accountable.</p><div className="landing-final-actions"><Link href="/demo" className="landing-button landing-button-primary">Explore the demo <ArrowUpRight size={18} aria-hidden="true" /></Link><Link href="/how-it-works" className="landing-final-link">How RelayForge works <ArrowRight size={17} aria-hidden="true" /></Link></div></div>
         </section>
       </main>
 

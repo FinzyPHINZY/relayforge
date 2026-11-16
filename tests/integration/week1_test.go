@@ -45,7 +45,7 @@ func setupWithContainer(t testing.TB) (*pgxpool.Pool, *httptest.Server, *postgre
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("PostgreSQL did not accept a connection after readiness: %v", err)
 	}
-	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql", "../../db/migrations/000003_recovery.up.sql", "../../db/migrations/000004_retention.up.sql", "../../db/migrations/000005_endpoint_circuits.up.sql", "../../db/migrations/000006_delivery_reviews.up.sql", "../../db/migrations/000007_fair_claims.up.sql", "../../db/migrations/000008_trace_context.up.sql", "../../db/migrations/000009_scheduled_events.up.sql", "../../db/migrations/000010_endpoint_verification.up.sql", "../../db/migrations/000011_analytics.up.sql", "../../db/migrations/000012_payload_transforms.up.sql", "../../db/migrations/000013_team_roles.up.sql"} {
+	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql", "../../db/migrations/000003_recovery.up.sql", "../../db/migrations/000004_retention.up.sql", "../../db/migrations/000005_endpoint_circuits.up.sql", "../../db/migrations/000006_delivery_reviews.up.sql", "../../db/migrations/000007_fair_claims.up.sql", "../../db/migrations/000008_trace_context.up.sql", "../../db/migrations/000009_scheduled_events.up.sql", "../../db/migrations/000010_endpoint_verification.up.sql", "../../db/migrations/000011_analytics.up.sql", "../../db/migrations/000012_payload_transforms.up.sql", "../../db/migrations/000013_team_roles.up.sql", "../../db/migrations/000014_endpoint_delivery_limits.up.sql", "../../db/migrations/000015_audit_events.up.sql", "../../db/migrations/000016_overview_analytics.up.sql", "../../db/migrations/000017_event_payload_audit.up.sql", "../../db/migrations/000018_attempt_retry_schedule.up.sql"} {
 		schema, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
@@ -54,7 +54,7 @@ func setupWithContainer(t testing.TB) (*pgxpool.Pool, *httptest.Server, *postgre
 			t.Fatal(err)
 		}
 	}
-	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY); INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13)`, pgx.QueryExecModeSimpleProtocol); err != nil {
+	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY); INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18)`, pgx.QueryExecModeSimpleProtocol); err != nil {
 		t.Fatal(err)
 	}
 	server := httptest.NewServer((&api.Server{DB: pool, EncryptionKey: bytes.Repeat([]byte{1}, 32), EncryptionKeyID: "test"}).Router())
@@ -221,6 +221,16 @@ func TestEndpointTenantIsolationAndSecretOnce(t *testing.T) {
 	resp, body = request(t, "GET", server.URL+"/v1/endpoints/"+created.Endpoint.ID, key, "")
 	if resp.StatusCode != 200 || bytes.Contains(body, []byte(created.SigningSecret)) {
 		t.Fatal("GET leaked secret or failed")
+	}
+	var detail struct {
+		EventTypes []string `json:"event_types"`
+	}
+	if err := json.Unmarshal(body, &detail); err != nil || len(detail.EventTypes) != 1 || detail.EventTypes[0] != "order.created" {
+		t.Fatalf("subscriptions=%+v err=%v", detail.EventTypes, err)
+	}
+	resp, body = request(t, "GET", server.URL+"/v1/endpoints", otherKey, "")
+	if resp.StatusCode != 200 || bytes.Contains(body, []byte(created.Endpoint.ID)) {
+		t.Fatalf("cross-tenant endpoint list status=%d body=%s", resp.StatusCode, body)
 	}
 	resp, _ = request(t, "GET", server.URL+"/v1/endpoints/"+created.Endpoint.ID, otherKey, "")
 	if resp.StatusCode != 404 {

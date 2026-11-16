@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"webhook_delivery/internal/id"
 	"webhook_delivery/internal/security"
@@ -150,6 +151,13 @@ func (s *Server) createTeamMember(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
+	if err = writeAudit(r, tx, "team.member_created", "team_member", memberID, map[string]any{"role": in.Role}); err == nil {
+		err = writeAudit(r, tx, "api_key.issued", "api_key", keyID, map[string]any{"member_id": memberID})
+	}
+	if err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
 	if err = tx.Commit(ctx); err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
@@ -177,13 +185,42 @@ func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "invalid_member", "Invalid role or status")
 		return
 	}
-	tag, err := s.DB.Exec(r.Context(), `UPDATE team_members SET role=COALESCE($3,role),status=COALESCE($4,status),updated_at=now() WHERE id=$1 AND organization_id=$2`, memberID, tenant(r), in.Role, in.Status)
+	ctx := r.Context()
+	tx, err := s.DB.Begin(ctx)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
-	if tag.RowsAffected() == 0 {
+	defer tx.Rollback(ctx)
+	var oldRole, oldStatus string
+	err = tx.QueryRow(ctx, `SELECT role,status FROM team_members WHERE id=$1 AND organization_id=$2 FOR UPDATE`, memberID, tenant(r)).Scan(&oldRole, &oldStatus)
+	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "not_found", "Member not found")
+		return
+	}
+	if err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	role, status := oldRole, oldStatus
+	if in.Role != nil {
+		role = *in.Role
+	}
+	if in.Status != nil {
+		status = *in.Status
+	}
+	if role != oldRole || status != oldStatus {
+		_, err = tx.Exec(ctx, `UPDATE team_members SET role=$3,status=$4,updated_at=now() WHERE id=$1 AND organization_id=$2`, memberID, tenant(r), role, status)
+		if err == nil {
+			err = writeAudit(r, tx, "team.member_updated", "team_member", memberID, map[string]any{"role": role, "status": status})
+		}
+		if err != nil {
+			problem(w, 503, "storage_unavailable", "Storage unavailable")
+			return
+		}
+	}
+	if err = tx.Commit(ctx); err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
 	writeJSON(w, 200, map[string]string{"status": "updated"})

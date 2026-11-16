@@ -140,16 +140,17 @@ func (s *Server) listDeliveries(w http.ResponseWriter, r *http.Request) {
 }
 
 type attemptView struct {
-	ID              string     `json:"id"`
-	AttemptNumber   int        `json:"attempt_number"`
-	SigningSecretID *string    `json:"signing_secret_id,omitempty"`
-	StartedAt       time.Time  `json:"started_at"`
-	FinishedAt      *time.Time `json:"finished_at,omitempty"`
-	DurationMS      *int       `json:"duration_ms,omitempty"`
-	HTTPStatus      *int       `json:"http_status,omitempty"`
-	Outcome         string     `json:"outcome"`
-	ErrorCode       *string    `json:"error_code,omitempty"`
-	ResponseExcerpt *string    `json:"response_excerpt,omitempty"`
+	ID               string     `json:"id"`
+	AttemptNumber    int        `json:"attempt_number"`
+	SigningSecretID  *string    `json:"signing_secret_id,omitempty"`
+	StartedAt        time.Time  `json:"started_at"`
+	FinishedAt       *time.Time `json:"finished_at,omitempty"`
+	DurationMS       *int       `json:"duration_ms,omitempty"`
+	HTTPStatus       *int       `json:"http_status,omitempty"`
+	Outcome          string     `json:"outcome"`
+	ErrorCode        *string    `json:"error_code,omitempty"`
+	ResponseExcerpt  *string    `json:"response_excerpt,omitempty"`
+	RetryScheduledAt *time.Time `json:"retry_scheduled_at,omitempty"`
 }
 
 func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +168,13 @@ func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
-	rows, err := s.DB.Query(r.Context(), `SELECT id,attempt_number,signing_secret_id,started_at,finished_at,duration_ms,http_status,outcome,error_code,response_excerpt FROM delivery_attempts WHERE delivery_id=$1 AND organization_id=$2 ORDER BY attempt_number`, deliveryID, tenant(r))
+	var eventAcceptedAt time.Time
+	var outboxDispatchedAt *time.Time
+	if err := s.DB.QueryRow(r.Context(), `SELECT e.created_at,o.dispatched_at FROM events e JOIN outbox o ON o.event_id=e.id AND o.organization_id=e.organization_id WHERE e.id=$1 AND e.organization_id=$2`, d.EventID, tenant(r)).Scan(&eventAcceptedAt, &outboxDispatchedAt); err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	rows, err := s.DB.Query(r.Context(), `SELECT id,attempt_number,signing_secret_id,started_at,finished_at,duration_ms,http_status,outcome,error_code,response_excerpt,retry_scheduled_at FROM delivery_attempts WHERE delivery_id=$1 AND organization_id=$2 ORDER BY attempt_number`, deliveryID, tenant(r))
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
@@ -176,10 +183,11 @@ func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) {
 	attempts := make([]attemptView, 0)
 	for rows.Next() {
 		var a attemptView
-		if err = rows.Scan(&a.ID, &a.AttemptNumber, &a.SigningSecretID, &a.StartedAt, &a.FinishedAt, &a.DurationMS, &a.HTTPStatus, &a.Outcome, &a.ErrorCode, &a.ResponseExcerpt); err != nil {
+		if err = rows.Scan(&a.ID, &a.AttemptNumber, &a.SigningSecretID, &a.StartedAt, &a.FinishedAt, &a.DurationMS, &a.HTTPStatus, &a.Outcome, &a.ErrorCode, &a.ResponseExcerpt, &a.RetryScheduledAt); err != nil {
 			problem(w, 503, "storage_unavailable", "Storage unavailable")
 			return
 		}
+		a.ResponseExcerpt = safeResponseExcerpt(a.ResponseExcerpt)
 		attempts = append(attempts, a)
 	}
 	if rows.Err() != nil {
@@ -207,7 +215,8 @@ func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
-	writeJSON(w, 200, map[string]any{"delivery": d, "attempts": attempts, "review_history": history})
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, map[string]any{"delivery": d, "attempts": attempts, "review_history": history, "event_accepted_at": eventAcceptedAt, "outbox_dispatched_at": outboxDispatchedAt})
 }
 
 func (s *Server) replayDelivery(w http.ResponseWriter, r *http.Request) {
@@ -288,6 +297,10 @@ func (s *Server) replayDelivery(w http.ResponseWriter, r *http.Request) {
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO replay_requests (organization_id,source_delivery_id,idempotency_key,replay_delivery_id) VALUES ($1,$2,$3,$4)`, orgID, sourceID, key, newID)
 	if err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	if err = writeAudit(r, tx, "delivery.replayed", "delivery", newID, map[string]any{"source_delivery_id": sourceID, "run_number": runNumber}); err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}

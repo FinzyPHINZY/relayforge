@@ -76,6 +76,9 @@ func TestExhaustedDeliveryReviewIsAuditedAndTenantScoped(t *testing.T) {
 	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM delivery_review_history WHERE delivery_id=$1`, claim.ID).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("audit count=%d err=%v", count, err)
 	}
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE target_id=$1 AND action='delivery.reviewed'`, claim.ID).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("general review audit count=%d err=%v", count, err)
+	}
 	publishDeliveryEvent(t, apiServer, key)
 	pending := dispatchAndClaim(t, pool, "second-worker")
 	resp, _ = request(t, http.MethodPatch, apiServer.URL+"/v1/deliveries/"+pending.ID+"/review", key, `{"status":"investigating"}`)

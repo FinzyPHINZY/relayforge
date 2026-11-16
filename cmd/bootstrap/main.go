@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"webhook_delivery/internal/audit"
 	"webhook_delivery/internal/database/sqlc"
 	"webhook_delivery/internal/id"
 	"webhook_delivery/internal/security"
@@ -68,6 +69,9 @@ func main() {
 		if err != nil {
 			log.Fatal(err)
 		}
+		if err = audit.Write(ctx, tx, audit.Entry{OrganizationID: orgID, ActorRole: "system", Action: "organization.created", TargetType: "organization", TargetID: orgID}); err != nil {
+			log.Fatal(err)
+		}
 	} else {
 		var status string
 		if err = tx.QueryRow(ctx, `SELECT status FROM organizations WHERE id=$1`, orgID).Scan(&status); err != nil || status != "active" {
@@ -76,6 +80,9 @@ func main() {
 	}
 	_, err = tx.Exec(ctx, `INSERT INTO api_keys (id,organization_id,name,key_prefix,key_hash,scopes) VALUES ($1,$2,$3,$4,$5,$6)`, keyID, orgID, *keyName, prefix, security.Hash(raw), scopes)
 	if err != nil {
+		log.Fatal(err)
+	}
+	if err = audit.Write(ctx, tx, audit.Entry{OrganizationID: orgID, ActorRole: "system", Action: "api_key.issued", TargetType: "api_key", TargetID: keyID}); err != nil {
 		log.Fatal(err)
 	}
 	if err = tx.Commit(ctx); err != nil {

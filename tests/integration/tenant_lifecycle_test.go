@@ -39,6 +39,10 @@ func TestTenantSuspendExportAndPurge(t *testing.T) {
 	if err := tenant.Suspend(ctx, pool, org); err != nil {
 		t.Fatal(err)
 	}
+	resp, _ := request(t, http.MethodGet, apiServer.URL+"/v1/me", key, "")
+	if resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("suspended organization key status=%d", resp.StatusCode)
+	}
 	if count, err := delivery.DispatchBatch(ctx, pool, 50); err != nil || count != 0 {
 		t.Fatalf("suspended tenant dispatched: %d, %v", count, err)
 	}
@@ -54,8 +58,8 @@ func TestTenantSuspendExportAndPurge(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.Contains(string(b), `"table":"events"`) || strings.Contains(string(b), `"key_hash"`) || strings.Contains(string(b), `"ciphertext"`) {
-		t.Fatal("export omitted events or exposed credential material")
+	if !strings.Contains(string(b), `"table":"events"`) || !strings.Contains(string(b), `"table":"audit_events"`) || strings.Contains(string(b), `"key_hash"`) || strings.Contains(string(b), `"ciphertext"`) {
+		t.Fatal("export omitted events/audit or exposed credential material")
 	}
 	if err := tenant.Purge(ctx, pool, org, path); err != nil {
 		t.Fatal(err)

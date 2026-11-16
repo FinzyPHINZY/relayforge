@@ -37,12 +37,18 @@ export async function createEndpoint(_previous: CreateEndpointState, formData: F
   const eventTypes = String(formData.get("eventTypes") ?? "").split(/[\s,]+/).map((value) => value.trim()).filter(Boolean);
   if (formData.get("exhaustionAlerts") === "on" && !eventTypes.includes("relayforge.delivery.exhausted")) eventTypes.push("relayforge.delivery.exhausted");
   if (!url || eventTypes.length === 0) return { error: "Add a destination URL and at least one event type." };
+  const concurrency = String(formData.get("concurrencyLimit") ?? "2");
+  const rate = String(formData.get("rateLimitPerMinute") ?? "0");
+  const timeout = String(formData.get("timeoutMs") ?? "10000");
+  const maxAttempts = String(formData.get("maxAttempts") ?? "8");
+  if (!/^\d+$/.test(concurrency) || Number(concurrency) < 1 || Number(concurrency) > 100 || !/^\d+$/.test(rate) || Number(rate) > 6000) return { error: "Use 1–100 concurrent attempts and 0–6,000 deliveries per minute." };
+  if (!/^\d+$/.test(timeout) || Number(timeout) < 1000 || Number(timeout) > 30000 || !/^\d+$/.test(maxAttempts) || Number(maxAttempts) < 1 || Number(maxAttempts) > 8) return { error: "Use a 1,000–30,000 ms timeout and 1–8 total attempts." };
   let fieldMap: Record<string, string>;
   try { fieldMap = parseFieldMap(String(formData.get("fieldMap") ?? "")); } catch (error) { return { error: error instanceof Error ? error.message : "Invalid mapping." }; }
   try {
     const response = await apiJson<{ endpoint: Endpoint; signing_secret: string }>(key, "/v1/endpoints", {
       method: "POST",
-      body: JSON.stringify({ url, description, event_types: [...new Set(eventTypes)], verification_required: formData.get("verificationRequired") === "on", field_map: fieldMap }),
+      body: JSON.stringify({ url, description, event_types: [...new Set(eventTypes)], verification_required: formData.get("verificationRequired") === "on", field_map: fieldMap, concurrency_limit: Number(concurrency), rate_limit_per_minute: Number(rate), timeout_ms: Number(timeout), max_attempts: Number(maxAttempts) }),
     });
     revalidatePath("/endpoints");
     return { endpoint: response.endpoint, secret: response.signing_secret };
