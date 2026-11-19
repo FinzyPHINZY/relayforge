@@ -61,9 +61,16 @@ jobs:
           pnpm typecheck
           pnpm build
       - name: Verify TypeScript publisher SDK
+        working-directory: sdk/typescript
         run: |
-          web/dashboard/node_modules/.bin/tsc -p sdk/typescript/tsconfig.json
-          node sdk/typescript/test/client.test.mjs
+          npm ci
+          npm test
+          npm pack --dry-run
+      - name: Verify Go publisher SDK module
+        working-directory: sdk/go/relayforge
+        run: |
+          go vet ./...
+          go test ./...
       - name: Start Compose services
         run: |
           docker compose --profile demo --profile dashboard up --build -d

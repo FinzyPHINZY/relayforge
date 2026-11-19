@@ -1,8 +1,19 @@
 {
-  "name": "@relayforge/publisher",
+  "name": "@finzyphinzy/relayforge",
   "version": "0.1.0",
-  "private": true,
+  "description": "Publisher client for RelayForge: send webhook events with stable idempotency keys and bounded retries.",
+  "license": "MIT",
+  "keywords": ["relayforge", "webhooks", "webhook", "idempotency", "publisher"],
+  "homepage": "https://github.com/FinzyPHINZY/relayforge/tree/main/sdk/typescript#readme",
+  "bugs": "https://github.com/FinzyPHINZY/relayforge/issues",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FinzyPHINZY/relayforge.git",
+    "directory": "sdk/typescript"
+  },
   "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -10,9 +21,19 @@
     }
   },
   "files": ["dist"],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
   "scripts": {
     "build": "tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "tsc && node test/client.test.mjs",
+    "prepublishOnly": "npm test"
   },
   "devDependencies": {
     "typescript": "^5.9.3"
