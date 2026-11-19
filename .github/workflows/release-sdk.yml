@@ -52,8 +52,9 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
       - name: Ask the Go module proxy to index this version
-        working-directory: .
+        # Run outside the repo so the server's go.mod (newer Go) is not loaded.
+        working-directory: ${{ runner.temp }}
         run: |
           version="${GITHUB_REF_NAME#sdk/go/relayforge/}"
-          GOPROXY=https://proxy.golang.org GOFLAGS=-mod=mod \
+          GOPROXY=https://proxy.golang.org GOFLAGS= \
             go list -m "github.com/FinzyPHINZY/relayforge/sdk/go/relayforge@${version}"
