@@ -1,5 +1,10 @@
 # RelayForge
 
+[![npm](https://img.shields.io/npm/v/@finzyphinzy/relayforge?label=npm%20%40finzyphinzy%2Frelayforge)](https://www.npmjs.com/package/@finzyphinzy/relayforge)
+[![Go Reference](https://pkg.go.dev/badge/github.com/FinzyPHINZY/relayforge/sdk/go/relayforge.svg)](https://pkg.go.dev/github.com/FinzyPHINZY/relayforge/sdk/go/relayforge)
+[![CI](https://github.com/FinzyPHINZY/relayforge/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/FinzyPHINZY/relayforge/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 RelayForge is a multi-tenant service for accepting events and delivering signed HTTP webhooks to subscribed endpoints. It stores accepted events in PostgreSQL, creates endpoint-specific deliveries through an outbox dispatcher, and records each delivery attempt so operators can investigate failures and replay exhausted deliveries.
 
 The quickstart below accepts an event and sends a signed webhook to an optional local receiver.
