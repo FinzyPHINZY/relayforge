@@ -4,7 +4,7 @@
 .workings-nav a { color: #526657; font-size: 13px; font-weight: 650; }
 .workings-nav a:hover { color: #285a32; }
 .workings-hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, .95fr); align-items: center; gap: clamp(30px, 6vw, 90px); padding-block: 85px 110px; }
-.workings-back { display: inline-flex; align-items: center; gap: 7px; margin-bottom: 56px; color: #4c7053; font-size: 12px; font-weight: 700; }
+.workings-back { display: flex; width: fit-content; align-items: center; gap: 7px; margin-bottom: 40px; color: #4c7053; font-size: 12px; font-weight: 700; }
 .workings-back:hover, .workings-footer-link:hover { color: #246034; }
 .workings-hero h1 { max-width: 750px; margin: 20px 0 22px; font-size: clamp(47px, 5vw, 74px); line-height: 1.075; letter-spacing: -.065em; }
 .workings-hero h1 span { color: #568f54; }
@@ -87,7 +87,7 @@
 }
 @media (max-width: 650px) {
   .workings-hero { padding-block: 48px 75px; }
-  .workings-back { margin-bottom: 40px; }
+  .workings-back { margin-bottom: 28px; }
   .workings-section { padding-block: 75px; }
   .workings-stage-grid, .workings-control-grid, .workings-proof-grid { grid-template-columns: 1fr; }
   .workings-stage, .workings-control-grid article { min-height: 0; }
