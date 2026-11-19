@@ -126,6 +126,7 @@ export default function LandingPage() {
           <nav className="landing-nav" aria-label="Main navigation">
             <Link href="/demo">Guided demo</Link>
             <Link href="/how-it-works">How it works</Link>
+            <Link href="/docs">SDK docs</Link>
             <a href="#use-cases">Use cases</a>
             <a href="#capabilities">Capabilities</a>
             <a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer">GitHub <ArrowUpRight size={14} aria-hidden="true" /></a>
@@ -203,7 +204,7 @@ export default function LandingPage() {
             <p>Simple to publish. Deliberate about everything that happens after.</p>
           </div>
           <div className="landing-steps">
-            <div className="landing-step"><span className="landing-step-index">01 / PUBLISH</span><span className="landing-step-icon"><Terminal size={23} aria-hidden="true" /></span><h3>Send your event</h3><p>Publish once with an idempotency key. RelayForge returns after the event and its outbox entry commit together.</p></div>
+            <div className="landing-step"><span className="landing-step-index">01 / PUBLISH</span><span className="landing-step-icon"><Terminal size={23} aria-hidden="true" /></span><h3>Send your event</h3><p>Publish once with an idempotency key. RelayForge returns after the event and its outbox entry commit together.</p><Link href="/docs#publish" className="landing-step-link">Publish with the Go or TypeScript SDK <ArrowRight size={14} aria-hidden="true" /></Link></div>
             <div className="landing-step"><span className="landing-step-index">02 / DELIVER</span><span className="landing-step-icon"><RadioTower size={23} aria-hidden="true" /></span><h3>We handle the handoff</h3><p>Matching endpoints receive signed HTTP requests. Workers track attempts and retry transient failures.</p></div>
             <div className="landing-step"><span className="landing-step-index">03 / RECOVER</span><span className="landing-step-icon"><Activity size={23} aria-hidden="true" /></span><h3>See what happened</h3><p>Inspect every attempt, review exhausted deliveries, and replay when the receiver is ready.</p></div>
           </div>
@@ -248,7 +249,7 @@ export default function LandingPage() {
         </section>
       </main>
 
-      <footer className="landing-footer"><div className="landing-container landing-footer-inner"><Brand light /><span>Reliable delivery, made visible.</span><a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer">Source code <ArrowUpRight size={14} aria-hidden="true" /></a></div></footer>
+      <footer className="landing-footer"><div className="landing-container landing-footer-inner"><Brand light /><span>Reliable delivery, made visible.</span><span className="landing-footer-links"><Link href="/docs">SDK docs</Link><a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer">Source code <ArrowUpRight size={14} aria-hidden="true" /></a></span></div></footer>
     </div>
   );
 }

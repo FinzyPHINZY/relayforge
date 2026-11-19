@@ -52,7 +52,7 @@ Trace context follows an accepted event through PostgreSQL into its outbox dispa
 | Observe | Overview trends, event explorer, endpoint management, delivery inspector, OpenTelemetry traces and metrics, structured logs, and a monitor command. |
 | Operate | Docker Compose local stack, PostgreSQL-backed retention and tenant export/purge, and a read-only regional standby mode for externally managed failover. |
 
-The public entry points are `/` for the landing page, `/how-it-works` for the architecture and failure proof, and `/demo` for the guided illustration. The authenticated console starts at `/dashboard` and includes events, endpoints, deliveries, team administration, and audit history according to the key's scopes.
+The public entry points are `/` for the landing page, `/how-it-works` for the architecture and failure proof, `/demo` for the guided illustration, and `/docs` for the SDK and receiver guide. The authenticated console starts at `/dashboard` and includes events, endpoints, deliveries, team administration, and audit history according to the key's scopes.
 
 ## Measured reliability proof
 
@@ -71,7 +71,7 @@ The run used PostgreSQL 17 in Testcontainers, Go 1.25.0, an 8-CPU host, 16 concu
 
 ## Advanced features
 
-- **Publisher SDKs:** Go and TypeScript clients publish events with stable idempotency keys across bounded retries. Use the TypeScript client only in trusted server code; API keys must not be bundled into a browser.
+- **Publisher SDKs:** Go and TypeScript clients publish events with stable idempotency keys across bounded retries. Use the TypeScript client only in trusted server code; API keys must not be bundled into a browser. Install and usage: [`sdk/go/relayforge`](sdk/go/relayforge/README.md), [`sdk/typescript`](sdk/typescript/README.md), and the site's `/docs` page.
 - **Scheduled events:** `POST /v1/events` accepts an optional `deliver_at` time within the next 30 days. The outbox waits until that time before creating deliveries.
 - **Endpoint verification:** Set `verification_required` when creating an endpoint, then call `POST /v1/endpoints/{id}/verify`. The receiver must echo the `Webhook-Verification-Challenge` header as `Webhook-Verification-Response` on an HTTP 200 response. Changing the endpoint URL clears verification.
 - **Delivery analytics:** `GET /v1/analytics/deliveries?window=24h|7d|30d` returns tenant-scoped hourly attempt counts and p50/p95 duration.
@@ -219,3 +219,7 @@ For tenant removal, `cmd/tenant-admin` supports `-action=suspend`, `-action=expo
 | `internal/ratelimit` | Redis-backed API limits shared across instances. |
 | `db/migrations`, `db/queries`, `internal/database/sqlc` | PostgreSQL schema, source queries, and generated Go query code. |
 | `tests/integration` | Database-backed behavior and tenant-isolation tests. |
+
+## License
+
+MIT. See [LICENSE](LICENSE).

@@ -1,0 +1,59 @@
+name: Release SDK
+on:
+  push:
+    tags:
+      - "sdk/typescript/v*"
+      - "sdk/go/relayforge/v*"
+
+permissions:
+  contents: read
+
+jobs:
+  typescript:
+    if: startsWith(github.ref_name, 'sdk/typescript/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # npm provenance
+    defaults:
+      run:
+        working-directory: sdk/typescript
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - name: Check tag matches package.json version
+        run: |
+          tag="${GITHUB_REF_NAME#sdk/typescript/v}"
+          version="$(node -p 'require("./package.json").version')"
+          if [ "$tag" != "$version" ]; then
+            echo "Tag version $tag does not match package.json version $version" >&2
+            exit 1
+          fi
+      - run: npm ci
+      - run: npm test
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  go:
+    if: startsWith(github.ref_name, 'sdk/go/relayforge/v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: sdk/go/relayforge
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: sdk/go/relayforge/go.mod
+      - run: go vet ./...
+      - run: go test ./...
+      - name: Ask the Go module proxy to index this version
+        working-directory: .
+        run: |
+          version="${GITHUB_REF_NAME#sdk/go/relayforge/}"
+          GOPROXY=https://proxy.golang.org GOFLAGS=-mod=mod \
+            go list -m "github.com/FinzyPHINZY/relayforge/sdk/go/relayforge@${version}"

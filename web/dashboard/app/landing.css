@@ -113,6 +113,8 @@
 .landing-step-icon { display: grid; place-items: center; width: 46px; height: 46px; margin-top: 31px; border-radius: 10px; color: #37733d; background: #eff6e9; }
 .landing-step h3 { margin: 22px 0 9px; color: #1c3226; font-size: 19px; font-weight: 750; letter-spacing: -.03em; }
 .landing-step p { max-width: 315px; margin: 0; color: #758279; font-size: 13px; line-height: 1.72; }
+.landing-step-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 16px; color: #2b6338; font-size: 12px; font-weight: 750; }
+.landing-step-link:hover { color: #1d552b; }
 
 .landing-use-cases { border-top: 1px solid #e4e9df; background: #eef2e9; }
 .landing-use-case-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
@@ -174,6 +176,8 @@
 .landing-footer .landing-brand-mark { width: 30px; height: 30px; }
 .landing-footer-inner > span { color: #849286; font-size: 12px; }
 .landing-footer-inner > a:last-child { display: inline-flex; align-items: center; gap: 5px; color: #4c6752; font-size: 12px; font-weight: 700; }
+.landing-footer-inner > .landing-footer-links { display: inline-flex; align-items: center; gap: 22px; order: 0; width: auto; }
+.landing-footer-links a { display: inline-flex; align-items: center; gap: 5px; color: #4c6752; font-size: 12px; font-weight: 700; }
 
 @keyframes landing-rise { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes landing-pulse { 50% { box-shadow: 0 0 0 7px rgba(183,243,109,.11); } }
