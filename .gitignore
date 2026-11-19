@@ -15,3 +15,9 @@ web/dashboard/*.tsbuildinfo
 deploy/private-exports/
 sdk/typescript/dist/
 sdk/typescript/node_modules/
+
+# Local AI-assistant rule files
+AGENTS.md
+CLAUDE.md
+GEMINI.md
+.cursor/
