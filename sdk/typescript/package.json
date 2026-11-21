@@ -1,10 +1,16 @@
 {
   "name": "@finzyphinzy/relayforge",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Publisher client for RelayForge: send webhook events with stable idempotency keys and bounded retries.",
   "license": "MIT",
-  "keywords": ["relayforge", "webhooks", "webhook", "idempotency", "publisher"],
-  "homepage": "https://github.com/FinzyPHINZY/relayforge/tree/main/sdk/typescript#readme",
+  "keywords": [
+    "relayforge",
+    "webhooks",
+    "webhook",
+    "idempotency",
+    "publisher"
+  ],
+  "homepage": "https://relayforge.site/docs",
   "bugs": "https://github.com/FinzyPHINZY/relayforge/issues",
   "repository": {
     "type": "git",
@@ -20,7 +26,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "sideEffects": false,
   "engines": {
     "node": ">=20"
