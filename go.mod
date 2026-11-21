@@ -3,6 +3,8 @@ module webhook_delivery
 go 1.25.0
 
 require (
+	github.com/aws/aws-sdk-go-v2 v1.48.0
+	github.com/aws/aws-sdk-go-v2/service/sesv2 v1.80.0
 	github.com/go-chi/chi/v5 v5.4.0
 	github.com/jackc/pgx/v5 v5.12.0
 	github.com/redis/go-redis/v9 v9.22.0
@@ -14,6 +16,10 @@ require (
 )
 
 require (
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.12 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.12 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.12 // indirect
+	github.com/aws/smithy-go v1.28.9 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	go.opentelemetry.io/proto/otlp v1.10.0 // indirect

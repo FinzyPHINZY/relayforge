@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"strconv"
+	"strings"
 )
 
 type Config struct {
@@ -13,6 +14,11 @@ type Config struct {
 	EventRateLimit, ManagementRateLimit                int
 	DemoReceiverOrigin                                 string
 	RegionRole                                         string
+
+	// Accounts (optional; wired in cmd/api later).
+	DashboardPublicURL, MailFrom, MailProvider, AWSRegion string
+	IPHashKey                                             []byte
+	MagicLinkPerEmailPerHour, MagicLinkPerIPPerHour       int
 }
 
 func Load() (Config, error) {
@@ -49,6 +55,39 @@ func Load() (Config, error) {
 	}
 	if c.DemoReceiverOrigin != "" && c.DemoReceiverOrigin != "http://receiver:8090" {
 		return c, errors.New("DEMO_RECEIVER_ORIGIN must be http://receiver:8090 or empty")
+	}
+	c.DashboardPublicURL = strings.TrimRight(os.Getenv("DASHBOARD_PUBLIC_URL"), "/")
+	c.MailFrom = os.Getenv("MAIL_FROM")
+	c.MailProvider = os.Getenv("MAIL_PROVIDER")
+	if c.MailProvider == "" {
+		c.MailProvider = "log"
+	}
+	c.AWSRegion = os.Getenv("AWS_REGION")
+	switch c.MailProvider {
+	case "log":
+	case "ses":
+		if c.AWSRegion != "eu-north-1" {
+			return c, errors.New("AWS_REGION must be eu-north-1 when MAIL_PROVIDER is ses")
+		}
+		if c.MailFrom == "" {
+			return c, errors.New("MAIL_FROM is required when MAIL_PROVIDER is ses")
+		}
+	default:
+		return c, errors.New("MAIL_PROVIDER must be log or ses")
+	}
+	if raw := os.Getenv("IP_HASH_KEY_BASE64"); raw != "" {
+		c.IPHashKey, err = base64.StdEncoding.DecodeString(raw)
+		if err != nil || len(c.IPHashKey) != 32 {
+			return c, errors.New("IP_HASH_KEY_BASE64 must encode 32 bytes")
+		}
+	}
+	c.MagicLinkPerEmailPerHour, err = positiveEnv("MAGIC_LINK_PER_EMAIL_PER_HOUR", 5)
+	if err != nil {
+		return c, err
+	}
+	c.MagicLinkPerIPPerHour, err = positiveEnv("MAGIC_LINK_PER_IP_PER_HOUR", 20)
+	if err != nil {
+		return c, err
 	}
 	return c, nil
 }
