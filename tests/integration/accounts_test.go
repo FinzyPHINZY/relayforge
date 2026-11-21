@@ -3,6 +3,7 @@ package integration_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -279,5 +280,29 @@ func TestMagicLinkConsume(t *testing.T) {
 	_ = pool.QueryRow(ctx, `SELECT count(*) FROM sessions s JOIN users u ON u.id=s.user_id WHERE u.email='race@example.com'`).Scan(&rs)
 	if okCount.Load() != 1 || invalid.Load() != 7 || rs != 1 {
 		t.Fatalf("ok=%d invalid=%d sessions=%d", okCount.Load(), invalid.Load(), rs)
+	}
+}
+
+func TestMagicLinkEmptyIPFailsClosed(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	mailer := &mail.LogMailer{}
+	cfg := accounts.MagicLinkConfig{DashboardURL: "https://app.example", Mailer: mailer, Limiter: &fakeLimiter{}, PerEmailPerHour: 5, PerIPPerHour: 20}
+	st := &accounts.Store{DB: pool, IPHashKey: []byte("k")}
+	for i := 0; i < 20; i++ {
+		if err := st.RequestMagicLink(ctx, cfg, fmt.Sprintf("u%d@example.com", i), ""); err != nil {
+			t.Fatalf("request %d: %v", i, err)
+		}
+	}
+	var rl accounts.ErrRateLimited
+	if err := st.RequestMagicLink(ctx, cfg, "u21@example.com", ""); !errors.As(err, &rl) {
+		t.Fatalf("21st: %v", err)
+	}
+	if len(mailer.Sent) != 20 {
+		t.Fatalf("sent %d", len(mailer.Sent))
+	}
+	nokey := &accounts.Store{DB: pool}
+	if err := nokey.RequestMagicLink(ctx, cfg, "k@example.com", "1.2.3.4"); err == nil || errors.As(err, &rl) {
+		t.Fatalf("expected refusal without key: %v", err)
 	}
 }

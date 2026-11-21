@@ -17,6 +17,7 @@ type Config struct {
 
 	// Accounts (optional; wired in cmd/api later).
 	DashboardPublicURL, MailFrom, MailProvider, AWSRegion string
+	MailLogBodies                                         bool
 	IPHashKey                                             []byte
 	MagicLinkPerEmailPerHour, MagicLinkPerIPPerHour       int
 }
@@ -63,6 +64,12 @@ func Load() (Config, error) {
 		c.MailProvider = "log"
 	}
 	c.AWSRegion = os.Getenv("AWS_REGION")
+	if raw := os.Getenv("MAIL_LOG_BODIES"); raw != "" {
+		c.MailLogBodies, err = strconv.ParseBool(raw)
+		if err != nil {
+			return c, errors.New("MAIL_LOG_BODIES must be a boolean")
+		}
+	}
 	switch c.MailProvider {
 	case "log":
 	case "ses":

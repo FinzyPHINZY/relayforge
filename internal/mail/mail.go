@@ -8,6 +8,8 @@ import (
 	"sync"
 )
 
+const maxSent = 100
+
 type Message struct{ To, Subject, Text string }
 
 type Mailer interface {
@@ -18,15 +20,23 @@ type Mailer interface {
 // recipient domain, never the address or body.
 type LogMailer struct {
 	Logger *slog.Logger
-	Sent   []Message
-	mu     sync.Mutex
+	// LogBody logs the full message text; for local development only.
+	LogBody bool
+	// Sent holds the most recent maxSent messages.
+	Sent []Message
+	mu   sync.Mutex
 }
 
 func (l *LogMailer) Send(ctx context.Context, m Message) error {
 	l.mu.Lock()
 	l.Sent = append(l.Sent, m)
+	if len(l.Sent) > maxSent {
+		l.Sent = append([]Message(nil), l.Sent[len(l.Sent)-maxSent:]...)
+	}
 	l.mu.Unlock()
-	if l.Logger != nil {
+	if l.Logger != nil && l.LogBody {
+		l.Logger.InfoContext(ctx, "mail sent (log mailer)", "subject", m.Subject, "to", m.To, "text", m.Text)
+	} else if l.Logger != nil {
 		l.Logger.InfoContext(ctx, "mail sent (log mailer)", "subject", m.Subject, "recipient_domain", recipientDomain(m.To))
 	}
 	return nil

@@ -1,6 +1,10 @@
 package mail
 
 import (
+	"bytes"
+	"context"
+	"log/slog"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -29,5 +33,25 @@ func TestBuildSendEmailInput(t *testing.T) {
 	}
 	if in.Content.Simple == nil || *in.Content.Simple.Body.Text.Data != "t" || in.Content.Simple.Body.Html != nil {
 		t.Fatalf("body %+v", in.Content.Simple)
+	}
+}
+
+func TestLogMailerCapAndLogging(t *testing.T) {
+	var buf bytes.Buffer
+	l := &LogMailer{Logger: slog.New(slog.NewTextHandler(&buf, nil))}
+	for i := 1; i <= 105; i++ {
+		_ = l.Send(context.Background(), Message{To: "a@example.com", Subject: "s", Text: "link https://x/" + strconv.Itoa(i)})
+	}
+	if len(l.Sent) != 100 || l.Sent[99].Text != "link https://x/105" || l.Sent[0].Text != "link https://x/6" {
+		t.Fatalf("len=%d", len(l.Sent))
+	}
+	if strings.Contains(buf.String(), "https://x/") || strings.Contains(buf.String(), "a@example.com") {
+		t.Fatal("default logging leaked body or recipient")
+	}
+	buf.Reset()
+	l.LogBody = true
+	_ = l.Send(context.Background(), Message{To: "a@example.com", Subject: "s", Text: "link https://x/z"})
+	if !strings.Contains(buf.String(), "https://x/z") {
+		t.Fatal("LogBody did not log text")
 	}
 }

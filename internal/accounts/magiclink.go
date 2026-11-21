@@ -51,16 +51,22 @@ func (s *Store) RequestMagicLink(ctx context.Context, cfg MagicLinkConfig, rawEm
 	if err != nil {
 		return ErrInvalidEmail
 	}
-	if ipHash := s.HashIP(ip); ipHash != nil {
-		ok, retry, err := cfg.Limiter.AllowWindow(ctx, hex.EncodeToString(ipHash), "magic_link_ip", cfg.PerIPPerHour, time.Hour)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return ErrRateLimited{RetryAfter: retry}
-		}
+	if len(s.IPHashKey) == 0 {
+		return errors.New("accounts: IPHashKey is required for magic-link requests")
 	}
-	ok, retry, err := cfg.Limiter.AllowWindow(ctx, hex.EncodeToString(security.Hash(email)), "magic_link_email", cfg.PerEmailPerHour, time.Hour)
+	// Fail closed: requests with no IP share one bucket rather than skipping the limit.
+	ipSubject := ip
+	if ipSubject == "" {
+		ipSubject = "unknown"
+	}
+	ok, retry, err := cfg.Limiter.AllowWindow(ctx, hex.EncodeToString(s.HashIP(ipSubject)), "magic_link_ip", cfg.PerIPPerHour, time.Hour)
+	if err != nil {
+		return err
+	}
+	if !ok {
+		return ErrRateLimited{RetryAfter: retry}
+	}
+	ok, retry, err = cfg.Limiter.AllowWindow(ctx, hex.EncodeToString(security.Hash(email)), "magic_link_email", cfg.PerEmailPerHour, time.Hour)
 	if err != nil {
 		return err
 	}
