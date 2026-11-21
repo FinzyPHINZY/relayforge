@@ -138,12 +138,7 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent strin
 		u.AvatarURL = *avatar
 	}
 	u.EmailVerified = true
-	iid, err := id.New()
-	if err != nil {
-		return "", User{}, err
-	}
-	if _, err := tx.Exec(ctx, `INSERT INTO user_identities (id, user_id, provider, provider_subject, created_at) VALUES ($1,$2,'email',$3,$4)
-		ON CONFLICT (provider, provider_subject) DO NOTHING`, iid, u.ID, email, now); err != nil {
+	if err := linkIdentity(ctx, tx, u.ID, "email", email, now); err != nil {
 		return "", User{}, err
 	}
 	sessionToken, _, err := s.CreateSession(ctx, tx, u.ID, ip, userAgent)
@@ -154,4 +149,28 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent strin
 		return "", User{}, err
 	}
 	return sessionToken, u, nil
+}
+
+// ErrIdentityConflict reports an external identity already bound to another user.
+var ErrIdentityConflict = errors.New("identity belongs to a different user")
+
+// linkIdentity binds (provider, subject) to userID. It is idempotent for the
+// same user and fails with ErrIdentityConflict if another user owns it.
+func linkIdentity(ctx context.Context, tx pgx.Tx, userID, provider, subject string, now time.Time) error {
+	iid, err := id.New()
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, `INSERT INTO user_identities (id, user_id, provider, provider_subject, created_at) VALUES ($1,$2,$3,$4,$5)
+		ON CONFLICT (provider, provider_subject) DO NOTHING`, iid, userID, provider, subject, now); err != nil {
+		return err
+	}
+	var owner string
+	if err := tx.QueryRow(ctx, `SELECT user_id FROM user_identities WHERE provider=$1 AND provider_subject=$2`, provider, subject).Scan(&owner); err != nil {
+		return err
+	}
+	if owner != userID {
+		return ErrIdentityConflict
+	}
+	return nil
 }

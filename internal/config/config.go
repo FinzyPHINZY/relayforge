@@ -20,6 +20,7 @@ type Config struct {
 	MailLogBodies                                         bool
 	IPHashKey                                             []byte
 	MagicLinkPerEmailPerHour, MagicLinkPerIPPerHour       int
+	GitHubClientID, GitHubClientSecret                    string
 }
 
 func Load() (Config, error) {
@@ -95,6 +96,11 @@ func Load() (Config, error) {
 	c.MagicLinkPerIPPerHour, err = positiveEnv("MAGIC_LINK_PER_IP_PER_HOUR", 20)
 	if err != nil {
 		return c, err
+	}
+	c.GitHubClientID = os.Getenv("GITHUB_CLIENT_ID")
+	c.GitHubClientSecret = os.Getenv("GITHUB_CLIENT_SECRET")
+	if (c.GitHubClientID == "") != (c.GitHubClientSecret == "") {
+		return c, errors.New("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set together")
 	}
 	return c, nil
 }

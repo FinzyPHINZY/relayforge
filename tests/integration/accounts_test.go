@@ -306,3 +306,76 @@ func TestMagicLinkEmptyIPFailsClosed(t *testing.T) {
 		t.Fatalf("expected refusal without key: %v", err)
 	}
 }
+
+func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	st := &accounts.Store{DB: pool, IPHashKey: []byte("k")}
+	identities := func(uid string) int {
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM user_identities WHERE user_id=$1`, uid).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+
+	// magic-link user, then GitHub with the same verified primary email
+	mailer := &mail.LogMailer{}
+	cfg := accounts.MagicLinkConfig{DashboardURL: "https://app.example", Mailer: mailer, Limiter: &fakeLimiter{}, PerEmailPerHour: 5, PerIPPerHour: 100}
+	if err := st.RequestMagicLink(ctx, cfg, "bo@x.io", "1.2.3.4"); err != nil {
+		t.Fatal(err)
+	}
+	link := mailer.Sent[0].Text[strings.Index(mailer.Sent[0].Text, "token=")+6:]
+	if i := strings.IndexAny(link, " \n"); i >= 0 {
+		link = link[:i]
+	}
+	_, mlUser, err := st.ConsumeMagicLink(ctx, link, "1.2.3.4", "ua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := accounts.GitHubProfile{ID: 7, Login: "bo", Name: "Bo", AvatarURL: "https://a/1", VerifiedPrimaryEmail: "Bo@X.io"}
+	tok, u, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
+	if err != nil || u.ID != mlUser.ID || tok == "" {
+		t.Fatalf("link: %v %+v", err, u)
+	}
+	if n := identities(u.ID); n != 2 {
+		t.Fatalf("identities %d", n)
+	}
+	if u.DisplayName != "Bo" || u.AvatarURL != "https://a/1" {
+		t.Fatalf("profile not refreshed: %+v", u)
+	}
+
+	// second sign-in: same user, refreshed profile, even without email
+	p.Name, p.VerifiedPrimaryEmail = "", ""
+	_, u2, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
+	if err != nil || u2.ID != u.ID || u2.DisplayName != "bo" || identities(u.ID) != 2 {
+		t.Fatalf("second: %v %+v", err, u2)
+	}
+
+	// no verified email on a new identity
+	if _, _, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 8, Login: "z"}, "1.2.3.4", "ua"); !errors.Is(err, accounts.ErrGitHubEmailUnverified) {
+		t.Fatalf("empty email: %v", err)
+	}
+
+	// unverified existing user is neither linked nor duplicated
+	uid, _ := id.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email) VALUES ($1,'un@x.io')`, uid); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 9, Login: "un", VerifiedPrimaryEmail: "un@x.io"}, "1.2.3.4", "ua"); !errors.Is(err, accounts.ErrGitHubEmailUnverified) {
+		t.Fatalf("unverified: %v", err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM users WHERE email='un@x.io'`).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("users: %d %v", n, err)
+	}
+	if identities(uid) != 0 {
+		t.Fatal("unverified user got linked")
+	}
+
+	// brand-new GitHub user is created verified
+	_, nu, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 10, Login: "new", VerifiedPrimaryEmail: "new@x.io"}, "1.2.3.4", "ua")
+	if err != nil || !nu.EmailVerified || nu.Email != "new@x.io" {
+		t.Fatalf("create: %v %+v", err, nu)
+	}
+}
