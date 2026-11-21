@@ -33,7 +33,7 @@ type auditView struct {
 // Audit records contain identifiers and allowlisted metadata only. Owners can
 // inspect their own organization; records remain after individual keys change.
 func (s *Server) listAuditEvents(w http.ResponseWriter, r *http.Request) {
-	if !ownerOnly(w, r) {
+	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
 	limit, cursor, err := pageParams(r)

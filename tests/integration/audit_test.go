@@ -61,6 +61,16 @@ func TestAuditTrailIsTenantScopedRedactedAndAtomic(t *testing.T) {
 	if resp.StatusCode != 403 {
 		t.Fatalf("viewer audit status=%d", resp.StatusCode)
 	}
+	// Role changes go straight to SQL so the audit event counts asserted below stay stable.
+	for role, want := range map[string]int{"operator": 403, "admin": 200} {
+		if _, err := pool.Exec(context.Background(), `UPDATE team_members SET role=$2 WHERE id=$1`, member.ID, role); err != nil {
+			t.Fatal(err)
+		}
+		resp, body = request(t, http.MethodGet, server.URL+"/v1/audit", member.APIKey, "")
+		if resp.StatusCode != want {
+			t.Fatalf("%s audit status=%d want=%d body=%s", role, resp.StatusCode, want, body)
+		}
+	}
 	resp, body = request(t, http.MethodPatch, server.URL+"/v1/team/members/"+member.ID, ownerKey, `{"role":"operator","status":"suspended"}`)
 	if resp.StatusCode != 200 {
 		t.Fatalf("update member status=%d body=%s", resp.StatusCode, body)

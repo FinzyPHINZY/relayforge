@@ -16,12 +16,10 @@ import (
 
 func roleAllows(role, scope string) bool {
 	switch role {
-	case "owner":
+	case "owner", "admin":
 		return true
-	case "admin":
-		return scope != "team:write"
 	case "operator":
-		return scope != "team:write"
+		return scope != "team:write" && scope != "keys:write"
 	case "viewer":
 		return scope == "team:read" || scope == "events:read" || scope == "endpoints:read" || scope == "deliveries:read" || scope == "metrics:read"
 	default:
@@ -61,12 +59,16 @@ func (s *Server) listTeamMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"data": members})
 }
 
-func ownerOnly(w http.ResponseWriter, r *http.Request) bool {
-	if r.Context().Value(principalKey).(principal).Role != "owner" {
-		problem(w, 403, "forbidden", "Owner role required")
-		return false
+// requireRole writes a 403 and returns false unless the principal's role is in allowed.
+func requireRole(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
+	role := r.Context().Value(principalKey).(principal).Role
+	for _, a := range allowed {
+		if role == a {
+			return true
+		}
 	}
-	return true
+	problem(w, 403, "forbidden", "Insufficient role")
+	return false
 }
 
 func validTeamRole(role string) bool {
@@ -74,7 +76,7 @@ func validTeamRole(role string) bool {
 }
 
 func (s *Server) createTeamMember(w http.ResponseWriter, r *http.Request) {
-	if !ownerOnly(w, r) {
+	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
 	var in struct {
@@ -166,7 +168,7 @@ func (s *Server) createTeamMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
-	if !ownerOnly(w, r) {
+	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
 	memberID := chi.URLParam(r, "id")

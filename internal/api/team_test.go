@@ -8,7 +8,14 @@ func TestRoleScopePolicy(t *testing.T) {
 		want        bool
 	}{
 		{"owner", "team:write", true},
-		{"admin", "team:write", false},
+		{"admin", "team:write", true},
+		{"owner", "keys:write", true},
+		{"admin", "keys:write", true},
+		{"admin", "keys:read", true},
+		{"operator", "keys:write", false},
+		{"operator", "keys:read", true},
+		{"viewer", "keys:read", false},
+		{"viewer", "keys:write", false},
 		{"admin", "endpoints:write", true},
 		{"operator", "team:write", false},
 		{"operator", "deliveries:write", true},
