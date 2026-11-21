@@ -21,3 +21,6 @@ AGENTS.md
 CLAUDE.md
 GEMINI.md
 .cursor/
+
+# Local agent scratch (plan execution ledgers)
+.superpowers/
