@@ -42,6 +42,7 @@ type Server struct {
 	limitEntries                        map[string]rateEntry
 	lastLimitCleanup                    time.Time
 	rateNow                             func() time.Time
+	keyTouches                          sync.Map // key id -> time.Time of the last last_used_at write
 
 	// Sign-in. MagicLinks.Limiter is the shared window limiter; nil makes the
 	// sign-in start routes fail closed.
@@ -209,9 +210,25 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 	})
 }
 
+// claimKeyTouch reports whether this process should record a use of keyID
+// at now: at most once a minute per key, so bursts start one write, not N.
+func (s *Server) claimKeyTouch(keyID string, now time.Time) bool {
+	prev, loaded := s.keyTouches.LoadOrStore(keyID, now)
+	if !loaded {
+		return true
+	}
+	if now.Sub(prev.(time.Time)) < time.Minute {
+		return false
+	}
+	return s.keyTouches.CompareAndSwap(keyID, prev, now)
+}
+
 // touchKey records key use at most once a minute. It runs in the background
 // so a slow or failed write never delays or fails the request.
 func (s *Server) touchKey(ctx context.Context, keyID string) {
+	if !s.claimKeyTouch(keyID, time.Now()) {
+		return
+	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
 		defer cancel()

@@ -139,6 +139,15 @@ func TestKeyRevokeAndLastUsed(t *testing.T) {
 	if lastUsed == nil {
 		t.Fatal("last_used_at not set after use")
 	}
+	// Further use within a minute leaves last_used_at alone.
+	for i := 0; i < 5; i++ {
+		env.expect("GET", "/v1/endpoints", raw, "", "", 200, "")
+	}
+	time.Sleep(200 * time.Millisecond)
+	var again *time.Time
+	if err := pool.QueryRow(ctx, `SELECT last_used_at FROM api_keys WHERE id=$1`, keyID).Scan(&again); err != nil || again == nil || !again.Equal(*lastUsed) {
+		t.Fatalf("last_used_at moved within a minute: %v -> %v (%v)", lastUsed, again, err)
+	}
 
 	env.expect("DELETE", "/v1/keys/"+keyID, ownerTok, org, "", 204, "")
 	env.expect("GET", "/v1/endpoints", raw, "", "", 401, "unauthorized")
@@ -264,4 +273,47 @@ func TestKeyLegacyNameMigration(t *testing.T) {
 	if _, err = pool.Exec(ctx, `UPDATE api_keys SET revoked_at=now() WHERE id=$1`, ids[""]); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// legacyKey inserts a pre-accounts key (no role, no member) into org.
+func legacyKey(t *testing.T, pool *pgxpool.Pool, org string, scopes []string) (string, string) {
+	t.Helper()
+	kid, _ := id.New()
+	raw, _ := security.NewToken("whk_")
+	prefix, _ := security.KeyPrefix(raw)
+	if _, err := pool.Exec(context.Background(), `INSERT INTO api_keys (id,organization_id,name,key_prefix,key_hash,scopes) VALUES ($1,$2,'legacy',$3,$4,$5)`, kid, org, prefix, security.Hash(raw), scopes); err != nil {
+		t.Fatal(err)
+	}
+	return kid, raw
+}
+
+func TestKeyRevokeRoleCeiling(t *testing.T) {
+	pool, _ := setup(t)
+	env, _, ownerTok, org := keyWorkspace(t, pool)
+	_, adminTok := env.member(pool, org, "admin@example.com", "", "admin")
+	ownerKey := env.expect("POST", "/v1/keys", ownerTok, org, `{"name":"owner","role":"owner","scopes":["events:read"]}`, 201, "")["id"].(string)
+	revokedOwnerKey := env.expect("POST", "/v1/keys", ownerTok, org, `{"name":"gone","role":"owner","scopes":["events:read"]}`, 201, "")["id"].(string)
+	env.expect("DELETE", "/v1/keys/"+revokedOwnerKey, ownerTok, org, "", 204, "")
+	legacyID, _ := legacyKey(t, pool, org, []string{"events:read"})
+	adminKey := env.expect("POST", "/v1/keys", ownerTok, org, `{"name":"admin","role":"admin","scopes":["events:read"]}`, 201, "")["id"].(string)
+
+	for _, target := range []string{ownerKey, legacyID, revokedOwnerKey} {
+		env.expect("DELETE", "/v1/keys/"+target, adminTok, org, "", 403, "scope_exceeds_role")
+	}
+	env.expect("DELETE", "/v1/keys/"+adminKey, adminTok, org, "", 204, "")
+	env.expect("DELETE", "/v1/keys/"+ownerKey, ownerTok, org, "", 204, "")
+	env.expect("DELETE", "/v1/keys/"+legacyID, ownerTok, org, "", 204, "")
+}
+
+func TestKeyScopesWithinCaller(t *testing.T) {
+	pool, _ := setup(t)
+	env, _, ownerTok, org := keyWorkspace(t, pool)
+	narrow := env.expect("POST", "/v1/keys", ownerTok, org, `{"name":"narrow","role":"admin","scopes":["keys:read","keys:write"]}`, 201, "")["key"].(string)
+	env.expect("POST", "/v1/keys", narrow, "", `{"name":"wide","role":"operator","scopes":["events:write"]}`, 403, "scope_exceeds_role")
+	env.expect("POST", "/v1/keys", narrow, "", `{"name":"same","role":"admin","scopes":["keys:read"]}`, 201, "")
+
+	_, legacy := legacyKey(t, pool, org, []string{"keys:write"})
+	env.expect("POST", "/v1/keys", legacy, "", `{"name":"wide","role":"owner","scopes":["events:write"]}`, 403, "scope_exceeds_role")
+	env.expect("POST", "/v1/keys", legacy, "", `{"name":"wide","role":"owner","scopes":["keys:read"]}`, 403, "scope_exceeds_role")
+	env.expect("POST", "/v1/keys", legacy, "", `{"name":"same","role":"owner","scopes":["keys:write"]}`, 201, "")
 }

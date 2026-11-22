@@ -114,6 +114,14 @@ func (s *Server) createKey(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "invalid_scopes", "At least one scope is required")
 		return
 	}
+	// A key can only hand out scopes its creator holds, so a narrow key
+	// (say, only keys:write) cannot mint a broader one.
+	for _, scope := range scopes {
+		if !p.Scopes[scope] {
+			problem(w, 403, "scope_exceeds_role", "Key scopes exceed your own")
+			return
+		}
+	}
 	keyID, err := id.New()
 	if err != nil {
 		problem(w, 503, "internal_error", "ID generation failed")
@@ -178,9 +186,9 @@ func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
 	}
 	defer tx.Rollback(ctx)
 	// Scan the stored id: the path id may differ in hex case.
-	var storedID string
+	var storedID, targetRole string
 	var revokedAt *time.Time
-	err = tx.QueryRow(ctx, `SELECT id::text,revoked_at FROM api_keys WHERE id=$1 AND organization_id=$2 FOR UPDATE`, keyID, tenant(r)).Scan(&storedID, &revokedAt)
+	err = tx.QueryRow(ctx, `SELECT k.id::text,k.revoked_at,COALESCE(m.role,k.role,'owner') FROM api_keys k LEFT JOIN team_members m ON m.id=k.member_id AND m.organization_id=k.organization_id WHERE k.id=$1 AND k.organization_id=$2 FOR UPDATE OF k`, keyID, tenant(r)).Scan(&storedID, &revokedAt, &targetRole)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "not_found", "API key not found")
 		return
@@ -189,8 +197,14 @@ func (s *Server) revokeKey(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
-	if storedID == r.Context().Value(principalKey).(principal).KeyID {
+	p := r.Context().Value(principalKey).(principal)
+	if storedID == p.KeyID {
 		problem(w, 409, "cannot_revoke_self", "A key cannot revoke itself")
+		return
+	}
+	// Checked before the revoked state so lower roles learn nothing about it.
+	if roleRank[targetRole] > roleRank[p.Role] {
+		problem(w, 403, "scope_exceeds_role", "Key role exceeds your role")
 		return
 	}
 	if revokedAt != nil {
