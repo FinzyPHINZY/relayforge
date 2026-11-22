@@ -145,3 +145,36 @@ func TestLinkOwnerSignsIn(t *testing.T) {
 		t.Fatalf("account %v", acct)
 	}
 }
+
+func TestLinkOwnerRefusesOtherMembersRow(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	for _, role := range []string{"owner", "viewer"} {
+		org, _ := tenantKey(t, pool, "conflict-"+role)
+		vid, _ := id.New()
+		email := role + "@example.com"
+		if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, email_verified_at) VALUES ($1,$2,now())`, vid, "v-"+email); err != nil {
+			t.Fatal(err)
+		}
+		mid, _ := id.New()
+		// V's row carries the target email but is linked to V.
+		if _, err := pool.Exec(ctx, `INSERT INTO team_members (id, organization_id, name, email, role, status, user_id) VALUES ($1,$2,'V',$3,$4,'active',$5)`, mid, org, email, role, vid); err != nil {
+			t.Fatal(err)
+		}
+		_, err := tenant.LinkOwner(ctx, pool, org, email)
+		if err == nil || err.Error() != "email already belongs to a different member of this workspace" {
+			t.Fatalf("%s: err=%v", role, err)
+		}
+		var gotUser, gotRole, gotStatus string
+		if err := pool.QueryRow(ctx, `SELECT user_id::text, role, status FROM team_members WHERE id=$1`, mid).Scan(&gotUser, &gotRole, &gotStatus); err != nil || gotUser != vid || gotRole != role || gotStatus != "active" {
+			t.Fatalf("%s: row changed %s %s %s %v", role, gotUser, gotRole, gotStatus, err)
+		}
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE organization_id=$1`, org).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("%s: audit rows %d %v", role, n, err)
+		}
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM team_members WHERE organization_id=$1 AND user_id<>$2`, org, vid).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("%s: extra members %d", role, n)
+		}
+	}
+}

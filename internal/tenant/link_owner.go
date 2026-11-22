@@ -67,10 +67,10 @@ func LinkOwner(ctx context.Context, pool *pgxpool.Pool, orgID, rawEmail string) 
 
 	// Prefer the row already linked to this user; otherwise adopt the row for this email.
 	var memberID, role, status string
-	var linked bool
-	err = tx.QueryRow(ctx, `SELECT id::text, role, status, user_id IS NOT NULL FROM team_members
+	var memberUser *string
+	err = tx.QueryRow(ctx, `SELECT id::text, role, status, user_id::text FROM team_members
 		WHERE organization_id=$1 AND (user_id=$2 OR email=$3)
-		ORDER BY (user_id=$2) DESC NULLS LAST LIMIT 1 FOR UPDATE`, orgID, userID, email).Scan(&memberID, &role, &status, &linked)
+		ORDER BY (user_id=$2) DESC NULLS LAST LIMIT 1 FOR UPDATE`, orgID, userID, email).Scan(&memberID, &role, &status, &memberUser)
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		if memberID, err = id.New(); err != nil {
@@ -82,7 +82,9 @@ func LinkOwner(ctx context.Context, pool *pgxpool.Pool, orgID, rawEmail string) 
 		err = audit.Write(ctx, tx, audit.Entry{OrganizationID: orgID, ActorRole: "system", Action: "team.member_created", TargetType: "team_member", TargetID: memberID})
 	case err != nil:
 		return "", err
-	case role == "owner" && status == "active" && linked:
+	case memberUser != nil && *memberUser != userID:
+		return "", errors.New("email already belongs to a different member of this workspace")
+	case role == "owner" && status == "active" && memberUser != nil:
 		// Already linked: nothing to change or audit.
 	default:
 		if _, err = tx.Exec(ctx, `UPDATE team_members SET role='owner',status='active',user_id=$2 WHERE id=$1`, memberID, userID); err != nil {
