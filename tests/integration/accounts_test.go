@@ -996,6 +996,11 @@ func TestSignOutRevokesSession(t *testing.T) {
 	env.expect("DELETE", "/v1/account/sessions/nope", tok, "", "", 404, "not_found")
 	env.expect("DELETE", "/v1/account/sessions/"+sess2.ID, tok, "", "", 204, "")
 	env.expect("GET", "/v1/account", tok2, "", "", 401, "unauthorized")
+	var revoked int
+	var revokedRole string
+	if err := pool.QueryRow(ctx, `SELECT count(*) OVER (), actor_role FROM audit_events WHERE action='session.revoked' AND target_type='session' AND target_id=$1 AND actor_user_id=$2 AND organization_id=$3`, sess2.ID, uid, ws["id"]).Scan(&revoked, &revokedRole); err != nil || revoked != 1 || revokedRole != "owner" {
+		t.Fatalf("session.revoked audit %d %s %v", revoked, revokedRole, err)
+	}
 
 	env.expect("POST", "/v1/account/sign-out", tok, "", "", 204, "")
 	env.expect("GET", "/v1/account", tok, "", "", 401, "unauthorized")

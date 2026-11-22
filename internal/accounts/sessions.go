@@ -104,9 +104,16 @@ func (s *Store) LookupSession(ctx context.Context, token string) (Session, User,
 	return sess, u, nil
 }
 
-// RevokeSession revokes one of the user's own live sessions; ErrNotFound otherwise.
+// RevokeSession revokes one of the user's own live sessions and writes
+// session.revoked into each active membership org, in one transaction.
+// ErrNotFound for an unknown, malformed, revoked or other user's session.
 func (s *Store) RevokeSession(ctx context.Context, userID, sessionID string) error {
-	tag, err := s.DB.Exec(ctx, `UPDATE sessions SET revoked_at=$3 WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, sessionID, userID, s.now())
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at=$3 WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, sessionID, userID, s.now())
 	if err != nil {
 		if isInvalidUUID(err) {
 			return ErrNotFound
@@ -116,7 +123,10 @@ func (s *Store) RevokeSession(ctx context.Context, userID, sessionID string) err
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	return nil
+	if err := auditUserEvent(ctx, tx, userID, "session.revoked", "session", sessionID, nil); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
 }
 
 // ListSessions returns the user's live sessions, newest first.
@@ -155,7 +165,7 @@ func (s *Store) SignOut(ctx context.Context, userID, sessionID string) error {
 	if tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}
-	if err := auditUserEvent(ctx, tx, userID, "user.signed_out", nil); err != nil {
+	if err := auditUserEvent(ctx, tx, userID, "user.signed_out", "user", userID, nil); err != nil {
 		return err
 	}
 	return tx.Commit(ctx)
@@ -164,11 +174,11 @@ func (s *Store) SignOut(ctx context.Context, userID, sessionID string) error {
 // auditSignIn writes user.signed_in, inside the sign-in tx, into every active
 // org where the user is an active member, using that membership's role.
 func auditSignIn(ctx context.Context, tx pgx.Tx, userID, method string) error {
-	return auditUserEvent(ctx, tx, userID, "user.signed_in", map[string]any{"method": method})
+	return auditUserEvent(ctx, tx, userID, "user.signed_in", "user", userID, map[string]any{"method": method})
 }
 
-// auditUserEvent writes a user-targeted audit row into each active membership org.
-func auditUserEvent(ctx context.Context, tx pgx.Tx, userID, action string, details map[string]any) error {
+// auditUserEvent writes an audit row acted by userID into each active membership org.
+func auditUserEvent(ctx context.Context, tx pgx.Tx, userID, action, targetType, targetID string, details map[string]any) error {
 	rows, err := tx.Query(ctx, `SELECT m.organization_id, m.role FROM team_members m JOIN organizations o ON o.id = m.organization_id
 		WHERE m.user_id=$1 AND m.status='active' AND o.status='active' ORDER BY m.organization_id`, userID)
 	if err != nil {
@@ -190,7 +200,7 @@ func auditUserEvent(ctx context.Context, tx pgx.Tx, userID, action string, detai
 	}
 	for _, m := range ms {
 		if err := audit.Write(ctx, tx, audit.Entry{OrganizationID: m.org, ActorUserID: userID, ActorRole: m.role, Action: action,
-			TargetType: "user", TargetID: userID, Details: details}); err != nil {
+			TargetType: targetType, TargetID: targetID, Details: details}); err != nil {
 			return err
 		}
 	}
