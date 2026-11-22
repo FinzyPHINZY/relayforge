@@ -3,7 +3,7 @@ import { saveSession, type SessionValue } from "@/lib/session";
 import { uuidPattern } from "@/lib/session-value";
 
 export type Workspace = { id: string; name: string; role: string; plan: string };
-export type Account = { user: { id: string; email?: string | null; display_name?: string | null }; workspaces: Workspace[] };
+export type Account = { user: { id: string; email?: string | null; display_name?: string | null; avatar_url?: string | null }; workspaces: Workspace[] };
 
 const sessionToken = /^rfs_[A-Za-z0-9_-]{1,508}$/;
 
