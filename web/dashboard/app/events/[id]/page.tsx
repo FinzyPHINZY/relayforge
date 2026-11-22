@@ -4,10 +4,10 @@ import { PageTitle, Shell } from "@/components/shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PayloadReveal } from "@/components/payload-reveal";
 import { StatusBadge } from "@/components/status-badge";
-import { ApiError, readApi, requireOrgSession } from "@/lib/api";
+import { ApiError, readApi, readPrincipal, requireOrgSession } from "@/lib/api";
 import { uuidPattern } from "@/lib/session-value";
 import { dateTime, shortId } from "@/lib/format";
-import type { Delivery, Event, Page, Principal } from "@/lib/types";
+import type { Delivery, Event, Page } from "@/lib/types";
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireOrgSession();
@@ -16,7 +16,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   let event: Event;
   try { event = await readApi<Event>(session, `/v1/events/${encodeURIComponent(id)}`); }
   catch (error) { if (error instanceof ApiError && error.status === 404) notFound(); throw error; }
-  const me = await readApi<Principal>(session, "/v1/me");
+  const me = await readPrincipal(session);
   const canReadDeliveries = me.scopes.includes("deliveries:read");
   const deliveries = canReadDeliveries ? await readApi<Page<Delivery>>(session, `/v1/deliveries?event_id=${encodeURIComponent(id)}&limit=50`) : { data: [], next_cursor: "" };
   const canReveal = me.scopes.includes("events:read") && (me.role === "owner" || me.role === "admin");

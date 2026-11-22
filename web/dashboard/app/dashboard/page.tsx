@@ -6,9 +6,9 @@ import { StarterChecklist } from "@/components/starter-checklist";
 import { OverviewCharts } from "@/components/overview-charts";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireOrgSession } from "@/lib/api";
+import { readApi, readPrincipal, requireOrgSession } from "@/lib/api";
 import { dateTime, shortId } from "@/lib/format";
-import type { Delivery, Endpoint, Event, Metrics, OverviewAnalytics, OverviewWindow, Page, Principal } from "@/lib/types";
+import type { Delivery, Endpoint, Event, Metrics, OverviewAnalytics, OverviewWindow, Page } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Overview | RelayForge Console" };
 
@@ -22,7 +22,7 @@ export default async function OverviewPage({ searchParams }: { searchParams: Pro
     readApi<Page<Delivery>>(session, "/v1/deliveries?limit=5"),
     readApi<Page<Event>>(session, "/v1/events?limit=5"),
     readApi<Page<Endpoint>>(session, "/v1/endpoints?limit=5"),
-    readApi<Principal>(session, "/v1/me"),
+    readPrincipal(session),
   ]);
   const finalized = overview.totals.succeeded + overview.totals.exhausted;
   const successRate = finalized ? `${(overview.totals.succeeded / finalized * 100).toFixed(1)}%` : "—";

@@ -4,9 +4,8 @@ import { ConsoleNav } from "@/components/console-nav";
 import { Button } from "@/components/ui/button";
 import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { fetchAccount, type Workspace } from "@/lib/account";
-import { apiJson } from "@/lib/api";
+import { fetchPrincipal } from "@/lib/api";
 import { getSession } from "@/lib/session";
-import type { Principal } from "@/lib/types";
 
 type ShellContext = { scopes: string[]; user: { workspaces: Workspace[]; currentId: string | null } | null };
 
@@ -17,7 +16,7 @@ async function loadShellContext(): Promise<ShellContext> {
   if (!session) return { scopes: [], user: null };
   const needsOrg = session.kind === "user" && !session.org;
   const [me, account] = await Promise.all([
-    needsOrg ? null : apiJson<Principal>(session, "/v1/me").catch(() => null),
+    needsOrg ? null : fetchPrincipal(session).catch(() => null),
     session.kind === "user" ? fetchAccount(session.token).catch(() => null) : null,
   ]);
   return {

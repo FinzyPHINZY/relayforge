@@ -4,10 +4,10 @@ import { CreateKeyForm, RevokeKeyButton } from "@/components/key-controls";
 import { EmptyState, PageTitle, Shell } from "@/components/shell";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireOrgSession } from "@/lib/api";
+import { readApi, readPrincipal, requireOrgSession } from "@/lib/api";
 import { dateTime } from "@/lib/format";
 import { allowedScopes } from "@/lib/key-form";
-import type { ApiKey, Principal } from "@/lib/types";
+import type { ApiKey } from "@/lib/types";
 
 export const metadata: Metadata = { title: "API keys · RelayForge" };
 
@@ -30,7 +30,7 @@ const td = "px-3 py-3 align-top text-sm first:pl-0 last:pr-0 max-lg:grid max-lg:
 
 export default async function KeysPage() {
   const session = await requireOrgSession();
-  const me = await readApi<Principal>(session, "/v1/me");
+  const me = await readPrincipal(session);
   const canRead = me.scopes.includes("keys:read");
   const canWrite = me.scopes.includes("keys:write");
   const keys = canRead ? (await readApi<{ data: ApiKey[] }>(session, "/v1/keys")).data : [];

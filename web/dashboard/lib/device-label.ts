@@ -6,7 +6,7 @@ const browsers: [RegExp, string][] = [
   [/\b(?:OPR|Opera)\//, "Opera"],
   [/\bSamsungBrowser\//, "Samsung Internet"],
   [/\b(?:Firefox|FxiOS)\//, "Firefox"],
-  [/\b(?:Chrome|CriOS|Chromium)\//, "Chrome"],
+  [/\b(?:HeadlessChrome|Chrome|CriOS|Chromium)\//, "Chrome"],
   [/\bVersion\/[\d.]+.*Safari\//, "Safari"],
   [/^curl\//, "curl"],
 ];

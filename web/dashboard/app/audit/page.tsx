@@ -2,15 +2,15 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageTitle, Shell, EmptyState } from "@/components/shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireOrgSession } from "@/lib/api";
+import { readApi, readPrincipal, requireOrgSession } from "@/lib/api";
 import { dateTime, shortId } from "@/lib/format";
-import type { AuditEvent, Page, Principal } from "@/lib/types";
+import type { AuditEvent, Page } from "@/lib/types";
 
 const targetPath: Partial<Record<AuditEvent["target_type"], string>> = { endpoint: "/endpoints", delivery: "/deliveries", event: "/events" };
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ cursor?: string }> }) {
   const session = await requireOrgSession();
-  const me = await readApi<Principal>(session, "/v1/me");
+  const me = await readPrincipal(session);
   if (me.role !== "owner" || !me.scopes.includes("team:read")) notFound();
   const { cursor } = await searchParams;
   const params = new URLSearchParams({ limit: "50" });

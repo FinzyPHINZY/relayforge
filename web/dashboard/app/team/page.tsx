@@ -3,13 +3,13 @@ import { UsersRound } from "lucide-react";
 import { CreateMemberForm, MemberAccessForm } from "@/components/team-controls";
 import { EmptyState, PageTitle, Shell } from "@/components/shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireOrgSession } from "@/lib/api";
+import { readApi, readPrincipal, requireOrgSession } from "@/lib/api";
 import { dateTime } from "@/lib/format";
-import type { Principal, TeamMember } from "@/lib/types";
+import type { TeamMember } from "@/lib/types";
 
 export default async function TeamPage() {
   const session = await requireOrgSession();
-  const me = await readApi<Principal>(session, "/v1/me");
+  const me = await readPrincipal(session);
   const members = me.scopes.includes("team:read") ? await readApi<{ data: TeamMember[] }>(session, "/v1/team/members") : { data: [] };
   const canManage = me.role === "owner" && me.scopes.includes("team:write");
   const canAudit = me.role === "owner" && me.scopes.includes("team:read");

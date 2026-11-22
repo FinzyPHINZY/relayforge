@@ -1,6 +1,10 @@
+import { headers as requestHeaders } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { buildApiUrl } from "@/lib/api-url";
+import { buildAuthHeaders, forwardedUserAgent } from "@/lib/auth-headers";
 import { getSession, type SessionValue } from "@/lib/session";
+import type { Principal } from "@/lib/types";
 
 export { clientIpFrom } from "@/lib/client-ip";
 
@@ -58,27 +62,54 @@ export async function apiJson<T>(s: SessionValue, path: string, init: RequestIni
   return send<T>(url, init, headers);
 }
 
-// Every /v1/auth call carries the dashboard token and the end user's IP (R19).
-function authRequest(path: string, clientIp: string): { url: URL; headers: Headers } {
+async function browserUserAgent(): Promise<string | null> {
+  try {
+    return forwardedUserAgent((await requestHeaders()).get("user-agent"));
+  } catch {
+    return null; // outside a request scope
+  }
+}
+
+// Every /v1/auth call carries the dashboard token and the end user's IP (R19),
+// and the browser's User-Agent so new sessions record the real device (R36).
+async function authRequest(path: string, clientIp: string): Promise<{ url: URL; headers: Headers }> {
   const url = buildApiUrl(path, apiOrigin(), "/v1/auth/");
   const token = process.env.DASHBOARD_API_TOKEN;
   if (!token) throw new Error("DASHBOARD_API_TOKEN is not set; the dashboard cannot call /v1/auth routes");
-  return { url, headers: new Headers({ "X-RelayForge-Dashboard-Token": token, "X-RelayForge-Client-IP": clientIp }) };
+  return { url, headers: buildAuthHeaders(token, clientIp, await browserUserAgent()) };
 }
 
 export async function authApi<T>(path: `/v1/auth/${string}`, body: unknown, clientIp: string): Promise<T> {
-  const { url, headers } = authRequest(path, clientIp);
+  const { url, headers } = await authRequest(path, clientIp);
   return send<T>(url, { method: "POST", body: JSON.stringify(body ?? {}) }, headers);
 }
 
 export async function authGet<T>(path: `/v1/auth/${string}`, clientIp: string): Promise<T> {
-  const { url, headers } = authRequest(path, clientIp);
+  const { url, headers } = await authRequest(path, clientIp);
   return send<T>(url, { method: "GET" }, headers);
 }
 
 export async function readApi<T>(s: SessionValue, path: string): Promise<T> {
   try {
     return await apiJson<T>(s, path);
+  } catch (error) {
+    if (error instanceof ApiError && error.status === 401) redirect("/login?error=expired");
+    throw error;
+  }
+}
+
+// One /v1/me call per render: the shell and the page share it. cache() keys on
+// arguments by identity, so it takes primitives rather than the session object.
+const principalFor = cache((kind: "key" | "user", token: string, org: string | null): Promise<Principal> =>
+  apiJson<Principal>(kind === "key" ? { kind, token } : { kind, token, org }, "/v1/me"));
+
+export function fetchPrincipal(s: SessionValue): Promise<Principal> {
+  return principalFor(s.kind, s.token, s.kind === "user" ? s.org : null);
+}
+
+export async function readPrincipal(s: SessionValue): Promise<Principal> {
+  try {
+    return await fetchPrincipal(s);
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) redirect("/login?error=expired");
     throw error;
