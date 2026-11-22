@@ -168,6 +168,23 @@ The dashboard shows tenant-scoped metrics, endpoints, circuit state, events, del
 
 The public `/demo` route walks visitors through a simulated failed receiver and successful retry. Authenticated operators can publish or schedule events, inspect analytics, manage team access, configure endpoint verification and field mappings, subscribe to exhaustion alerts, and rotate signing secrets. Write controls appear only for keys with the matching scope.
 
+### Sign in
+
+The console can also sign people in with GitHub or an emailed sign-in link, and
+each user can own or join several workspaces. It is enabled when
+`DASHBOARD_PUBLIC_URL`, `DASHBOARD_API_TOKEN` and `IP_HASH_KEY_BASE64` are all
+set (see the sign-in block in `.env.example`); otherwise the console offers
+API-key login only. For local use, set `DASHBOARD_PUBLIC_URL=http://localhost:3000`
+and generate the token and IP hash key with `openssl rand -base64 32`. With the
+default `MAIL_PROVIDER=log`, emails go to the API log; set `MAIL_LOG_BODIES=true`
+locally to see the sign-in link (never in production). GitHub sign-in needs an
+OAuth App with callback `http://localhost:3000/auth/github/callback` and both
+`GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. To give a user access to an
+existing organization, run
+`go run ./cmd/tenant-admin -action link-owner -org-id <id> -email <addr>`, then
+sign in at `http://localhost:3000/login` with that address. Production uses
+Amazon SES in eu-north-1; see `deploy/aws/README.md`.
+
 ## Develop and test
 
 ```sh

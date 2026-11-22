@@ -76,8 +76,8 @@ Resources:
     Type: AWS::IAM::Role
     Metadata:
       com.aws.cloudformation.Context:
-        why: Lets the deployment host receive SSM commands and read release archives.
-        must: Do not grant repository or broad S3 access.
+        why: Lets the deployment host receive SSM commands, read release archives, and send console sign-in email through SES.
+        must: Do not grant repository or broad S3 access; SES access stays ses:SendEmail on the relayforge.site identity from sign-in@relayforge.site only.
     Properties:
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
@@ -96,6 +96,16 @@ Resources:
               - Effect: Allow
                 Action: [s3:GetObject, s3:GetObjectVersion]
                 Resource: !Sub 'arn:aws:s3:::${ReleaseBucketName}/*'
+        - PolicyName: send-sign-in-email
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ses:SendEmail
+                Resource: !Sub 'arn:aws:ses:eu-north-1:${AWS::AccountId}:identity/relayforge.site'
+                Condition:
+                  StringEquals:
+                    ses:FromAddress: sign-in@relayforge.site
   HostProfile:
     Type: AWS::IAM::InstanceProfile
     Metadata:
@@ -110,8 +120,8 @@ Resources:
     UpdateReplacePolicy: Retain
     Metadata:
       com.aws.cloudformation.Context:
-        why: Runs the existing Compose application, PostgreSQL, Redis, and HTTPS proxy.
-        must: Preserve the instance and its encrypted root volume until data migration is planned.
+        why: Runs the existing Compose application, PostgreSQL, Redis, and HTTPS proxy. The API container sends SES email with host-role credentials from IMDSv2; a response hop limit of 2 lets containers on the Docker bridge network reach IMDS.
+        must: Preserve the instance and its encrypted root volume until data migration is planned. Keep HttpTokens required and HttpPutResponseHopLimit 2; never put AWS access keys in the env file.
     Properties:
       ImageId: !Ref LatestAmi
       InstanceType: !Ref InstanceType
@@ -198,6 +208,93 @@ Resources:
       Type: A
       TTL: '300'
       ResourceRecords: [!Ref HostAddress]
+  MailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Verifies relayforge.site in SES with Easy DKIM and a custom MAIL FROM domain so sign-in links are authenticated and aligned.
+        must: Keep SES-managed (Easy) DKIM and the mail.relayforge.site MAIL FROM domain in eu-north-1.
+    Properties:
+      EmailIdentity: relayforge.site
+      DkimAttributes:
+        SigningEnabled: true
+      DkimSigningAttributes:
+        NextSigningKeyLength: RSA_2048_BIT
+      MailFromAttributes:
+        MailFromDomain: mail.relayforge.site
+        BehaviorOnMxFailure: USE_DEFAULT_VALUE
+  MailDkimRecord1:
+    Type: AWS::Route53::RecordSet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Publishes the first SES Easy DKIM CNAME so SES can verify and sign for relayforge.site.
+        must: Keep the name and value bound to MailIdentity.
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt MailIdentity.DkimDNSTokenName1
+      Type: CNAME
+      TTL: '1800'
+      ResourceRecords: [!GetAtt MailIdentity.DkimDNSTokenValue1]
+  MailDkimRecord2:
+    Type: AWS::Route53::RecordSet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Publishes the second SES Easy DKIM CNAME so SES can verify and sign for relayforge.site.
+        must: Keep the name and value bound to MailIdentity.
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt MailIdentity.DkimDNSTokenName2
+      Type: CNAME
+      TTL: '1800'
+      ResourceRecords: [!GetAtt MailIdentity.DkimDNSTokenValue2]
+  MailDkimRecord3:
+    Type: AWS::Route53::RecordSet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Publishes the third SES Easy DKIM CNAME so SES can verify and sign for relayforge.site.
+        must: Keep the name and value bound to MailIdentity.
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: !GetAtt MailIdentity.DkimDNSTokenName3
+      Type: CNAME
+      TTL: '1800'
+      ResourceRecords: [!GetAtt MailIdentity.DkimDNSTokenValue3]
+  MailFromMxRecord:
+    Type: AWS::Route53::RecordSet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Routes bounce feedback for the custom MAIL FROM domain to SES in eu-north-1.
+        must: Keep the Region in the feedback host aligned with the SES identity Region.
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: mail.relayforge.site
+      Type: MX
+      TTL: '1800'
+      ResourceRecords: ['10 feedback-smtp.eu-north-1.amazonses.com']
+  MailFromSpfRecord:
+    Type: AWS::Route53::RecordSet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Authorizes SES to send for the custom MAIL FROM domain (SPF alignment).
+        must: Keep include:amazonses.com.
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: mail.relayforge.site
+      Type: TXT
+      TTL: '1800'
+      ResourceRecords: ['"v=spf1 include:amazonses.com ~all"']
+  DmarcRecord:
+    Type: AWS::Route53::RecordSet
+    Metadata:
+      com.aws.cloudformation.Context:
+        why: Publishes a monitoring-only DMARC policy; no _dmarc record existed when this was added (authoritative NXDOMAIN on 2026-11-22).
+        must: Keep a single _dmarc record; tighten p= only after reviewing aggregate reports.
+    Properties:
+      HostedZoneId: !Ref HostedZoneId
+      Name: _dmarc.relayforge.site
+      Type: TXT
+      TTL: '1800'
+      ResourceRecords: ['"v=DMARC1; p=none;"']
   DeploymentRole:
     Type: AWS::IAM::Role
     Metadata:
@@ -347,3 +444,12 @@ Outputs:
     Value: !Ref HostedZoneId
   PipelineName:
     Value: !Ref Pipeline
+  MailDkimCname1:
+    Description: SES Easy DKIM CNAME record 1 (name CNAME value).
+    Value: !Sub '${MailIdentity.DkimDNSTokenName1} CNAME ${MailIdentity.DkimDNSTokenValue1}'
+  MailDkimCname2:
+    Description: SES Easy DKIM CNAME record 2 (name CNAME value).
+    Value: !Sub '${MailIdentity.DkimDNSTokenName2} CNAME ${MailIdentity.DkimDNSTokenValue2}'
+  MailDkimCname3:
+    Description: SES Easy DKIM CNAME record 3 (name CNAME value).
+    Value: !Sub '${MailIdentity.DkimDNSTokenName3} CNAME ${MailIdentity.DkimDNSTokenValue3}'
