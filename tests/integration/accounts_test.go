@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgxpool"
 	"webhook_delivery/internal/accounts"
 	"webhook_delivery/internal/api"
 	"webhook_delivery/internal/id"
@@ -722,4 +723,285 @@ func TestAuthRoutes(t *testing.T) {
 		resp, body = call(t, u, "POST", "/v1/auth/github/callback", dashToken, "", `{"code":"good","verifier":"v"}`)
 		expect(t, resp, body, 403, "github_email_unverified")
 	})
+}
+
+// consoleEnv is an API server with accounts configured, plus helpers to create
+// session users and call the API with an org header.
+type consoleEnv struct {
+	t     *testing.T
+	url   string
+	store *accounts.Store
+}
+
+func newConsoleEnv(t *testing.T, pool *pgxpool.Pool, s *api.Server) *consoleEnv {
+	t.Helper()
+	store := &accounts.Store{DB: pool, IPHashKey: bytes.Repeat([]byte{7}, 32)}
+	s.DB = pool
+	s.Accounts = store
+	s.EncryptionKey = bytes.Repeat([]byte{1}, 32)
+	s.EncryptionKeyID = "test"
+	srv := httptest.NewServer(s.Router())
+	t.Cleanup(srv.Close)
+	return &consoleEnv{t: t, url: srv.URL, store: store}
+}
+
+// sessionUser inserts a user and returns its id and a live session token.
+func (e *consoleEnv) sessionUser(email, displayName string) (string, string) {
+	e.t.Helper()
+	ctx := context.Background()
+	uid, _ := id.New()
+	var dn any
+	if displayName != "" {
+		dn = displayName
+	}
+	if _, err := e.store.DB.Exec(ctx, `INSERT INTO users (id, email, email_verified_at, display_name) VALUES ($1,$2,now(),$3)`, uid, email, dn); err != nil {
+		e.t.Fatal(err)
+	}
+	tx, err := e.store.DB.Begin(ctx)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	tok, _, err := e.store.CreateSession(ctx, tx, uid, "1.2.3.4", "test-agent")
+	if err != nil {
+		_ = tx.Rollback(ctx)
+		e.t.Fatal(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		e.t.Fatal(err)
+	}
+	return uid, tok
+}
+
+func (e *consoleEnv) do(method, path, bearer, org, body string) (int, map[string]any) {
+	e.t.Helper()
+	r, err := http.NewRequest(method, e.url+path, strings.NewReader(body))
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	if bearer != "" {
+		r.Header.Set("Authorization", "Bearer "+bearer)
+	}
+	if org != "" {
+		r.Header.Set("X-RelayForge-Org", org)
+	}
+	if body != "" {
+		r.Header.Set("Content-Type", "application/json")
+	}
+	resp, err := http.DefaultClient.Do(r)
+	if err != nil {
+		e.t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	raw, _ := io.ReadAll(resp.Body)
+	out := map[string]any{}
+	if len(raw) > 0 {
+		var v any
+		if err := json.Unmarshal(raw, &v); err != nil {
+			e.t.Fatalf("%s %s: bad json %q", method, path, raw)
+		}
+		if m, ok := v.(map[string]any); ok {
+			out = m
+		} else {
+			out["_"] = v
+		}
+	}
+	return resp.StatusCode, out
+}
+
+func (e *consoleEnv) expect(method, path, bearer, org, body string, status int, code string) map[string]any {
+	e.t.Helper()
+	got, out := e.do(method, path, bearer, org, body)
+	if got != status || (code != "" && out["code"] != code) {
+		e.t.Fatalf("%s %s: status=%d body=%v; want %d %s", method, path, got, out, status, code)
+	}
+	return out
+}
+
+func TestSessionOrgHeaderRequiresActiveMembership(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	env := newConsoleEnv(t, pool, &api.Server{})
+	uid, tok := env.sessionUser("ada@example.com", "")
+
+	env.expect("GET", "/v1/endpoints", tok, "", "", 400, "org_required")
+	me := env.expect("GET", "/v1/me", tok, "", "", 200, "")
+	if me["user_id"] != uid || me["role"] != "" || len(me["scopes"].([]any)) != 0 {
+		t.Fatalf("org-less me %v", me)
+	}
+
+	foreign, key := tenantKey(t, pool, "not-mine")
+	env.expect("GET", "/v1/endpoints", tok, foreign, "", 403, "not_a_member")
+	env.expect("GET", "/v1/endpoints", tok, "not-a-uuid", "", 400, "invalid_org")
+
+	ws := env.expect("POST", "/v1/account/workspaces", tok, "", `{"name":"  Ada's workspace  "}`, 201, "")
+	if ws["name"] != "Ada's workspace" || ws["role"] != "owner" || ws["plan"] != "free" {
+		t.Fatalf("workspace %v", ws)
+	}
+	org := ws["id"].(string)
+	env.expect("GET", "/v1/endpoints", tok, org, "", 200, "")
+	me = env.expect("GET", "/v1/me", tok, org, "", 200, "")
+	if me["user_id"] != uid || me["role"] != "owner" || len(me["scopes"].([]any)) != 11 {
+		t.Fatalf("owner me %v", me)
+	}
+
+	acct := env.expect("GET", "/v1/account", tok, "", "", 200, "")
+	user := acct["user"].(map[string]any)
+	wss := acct["workspaces"].([]any)
+	if user["id"] != uid || user["email"] != "ada@example.com" || len(wss) != 1 || wss[0].(map[string]any)["id"] != org || wss[0].(map[string]any)["role"] != "owner" {
+		t.Fatalf("account %v", acct)
+	}
+
+	if _, err := pool.Exec(ctx, `UPDATE team_members SET status='suspended' WHERE user_id=$1 AND organization_id=$2`, uid, org); err != nil {
+		t.Fatal(err)
+	}
+	env.expect("GET", "/v1/endpoints", tok, org, "", 403, "not_a_member")
+	if _, err := pool.Exec(ctx, `UPDATE team_members SET status='active' WHERE user_id=$1 AND organization_id=$2`, uid, org); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pool.Exec(ctx, `UPDATE organizations SET status='suspended' WHERE id=$1`, org); err != nil {
+		t.Fatal(err)
+	}
+	env.expect("GET", "/v1/endpoints", tok, org, "", 403, "not_a_member")
+
+	env.expect("GET", "/v1/account", key, "", "", 403, "session_required")
+	env.expect("GET", "/v1/endpoints", key, "", "", 200, "")
+	env.expect("GET", "/v1/account", "rfs_"+strings.Repeat("x", 43), "", "", 401, "unauthorized")
+
+	// accounts not configured: session bearers are rejected
+	off := httptest.NewServer((&api.Server{DB: pool, EncryptionKey: bytes.Repeat([]byte{1}, 32), EncryptionKeyID: "test"}).Router())
+	t.Cleanup(off.Close)
+	resp, _ := request(t, "GET", off.URL+"/v1/me", tok, "")
+	if resp.StatusCode != 401 {
+		t.Fatalf("accounts off: %d", resp.StatusCode)
+	}
+}
+
+func TestCreateWorkspaceLimit(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	env := newConsoleEnv(t, pool, &api.Server{})
+	uid, tok := env.sessionUser("grace.hopper@example.com", "")
+
+	env.expect("POST", "/v1/account/workspaces", tok, "", `{"name":"   "}`, 422, "invalid_workspace")
+	env.expect("POST", "/v1/account/workspaces", tok, "", `{"name":"`+strings.Repeat("a", 81)+`"}`, 422, "invalid_workspace")
+	for i := 1; i <= 3; i++ {
+		ws := env.expect("POST", "/v1/account/workspaces", tok, "", fmt.Sprintf(`{"name":"ws %d"}`, i), 201, "")
+		org := ws["id"].(string)
+		var name, email, role, status string
+		if err := pool.QueryRow(ctx, `SELECT name,email,role,status FROM team_members WHERE organization_id=$1 AND user_id=$2`, org, uid).Scan(&name, &email, &role, &status); err != nil {
+			t.Fatal(err)
+		}
+		if name != "grace.hopper" || email != "grace.hopper@example.com" || role != "owner" || status != "active" {
+			t.Fatalf("member %s %s %s %s", name, email, role, status)
+		}
+		var n int
+		var actorRole, targetType, target string
+		if err := pool.QueryRow(ctx, `SELECT count(*) OVER (), actor_role, target_type, target_id::text FROM audit_events WHERE organization_id=$1 AND action='organization.created_by_user' AND actor_user_id=$2 AND actor_api_key_id IS NULL`, org, uid).Scan(&n, &actorRole, &targetType, &target); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 || actorRole != "owner" || targetType != "organization" || target != org {
+			t.Fatalf("audit %d %s %s %s", n, actorRole, targetType, target)
+		}
+		var quota, maxEndpoints int
+		var createdBy string
+		if err := pool.QueryRow(ctx, `SELECT monthly_event_quota, max_endpoints, created_by_user_id::text FROM organizations WHERE id=$1`, org).Scan(&quota, &maxEndpoints, &createdBy); err != nil {
+			t.Fatal(err)
+		}
+		if quota != 10000 || maxEndpoints != 10 || createdBy != uid {
+			t.Fatalf("org %d %d %s", quota, maxEndpoints, createdBy)
+		}
+	}
+	env.expect("POST", "/v1/account/workspaces", tok, "", `{"name":"ws 4"}`, 429, "workspace_limit")
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM organizations WHERE created_by_user_id=$1`, uid).Scan(&n); err != nil || n != 3 {
+		t.Fatalf("orgs %d %v", n, err)
+	}
+
+	// concurrent creations never exceed the limit
+	uid2, tok2 := env.sessionUser("race@example.com", "Racer")
+	var wg sync.WaitGroup
+	var created atomic.Int32
+	for i := 0; i < 6; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			got, _ := env.do("POST", "/v1/account/workspaces", tok2, "", fmt.Sprintf(`{"name":"r%d"}`, i))
+			if got == 201 {
+				created.Add(1)
+			} else if got != 429 {
+				t.Errorf("concurrent status %d", got)
+			}
+		}(i)
+	}
+	wg.Wait()
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM organizations WHERE created_by_user_id=$1`, uid2).Scan(&n); err != nil || n != 3 || created.Load() != 3 {
+		t.Fatalf("concurrent orgs=%d created=%d %v", n, created.Load(), err)
+	}
+	var memberName string
+	if err := pool.QueryRow(ctx, `SELECT name FROM team_members WHERE user_id=$1 LIMIT 1`, uid2).Scan(&memberName); err != nil || memberName != "Racer" {
+		t.Fatalf("display name member %q %v", memberName, err)
+	}
+
+	// configured limit
+	env2 := newConsoleEnv(t, pool, &api.Server{MaxWorkspacesPerUser: 1})
+	_, tok3 := env2.sessionUser("one@example.com", "")
+	env2.expect("POST", "/v1/account/workspaces", tok3, "", `{"name":"only"}`, 201, "")
+	env2.expect("POST", "/v1/account/workspaces", tok3, "", `{"name":"second"}`, 429, "workspace_limit")
+}
+
+func TestSignOutRevokesSession(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	env := newConsoleEnv(t, pool, &api.Server{})
+	uid, tok := env.sessionUser("out@example.com", "")
+	_, tokOther := env.sessionUser("other@example.com", "")
+	ws := env.expect("POST", "/v1/account/workspaces", tok, "", `{"name":"w"}`, 201, "")
+
+	// a second session for the same user
+	tx, _ := pool.Begin(ctx)
+	tok2, sess2, err := env.store.CreateSession(ctx, tx, uid, "", "second-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = tx.Commit(ctx)
+
+	_, list := env.do("GET", "/v1/account/sessions", tok, "", "")
+	items, _ := list["data"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("sessions %v", list)
+	}
+	currents := 0
+	for _, it := range items {
+		m := it.(map[string]any)
+		for _, k := range []string{"id", "created_at", "last_seen_at", "expires_at", "user_agent", "current"} {
+			if _, ok := m[k]; !ok {
+				t.Fatalf("missing %s in %v", k, m)
+			}
+		}
+		if m["current"] == true {
+			currents++
+			if m["id"] == sess2.ID || m["user_agent"] != "test-agent" {
+				t.Fatalf("wrong current %v", m)
+			}
+		}
+	}
+	if currents != 1 {
+		t.Fatalf("current count %d", currents)
+	}
+
+	// another user's session id is not found; unknown and malformed ids too
+	env.expect("DELETE", "/v1/account/sessions/"+sess2.ID, tokOther, "", "", 404, "not_found")
+	unknown, _ := id.New()
+	env.expect("DELETE", "/v1/account/sessions/"+unknown, tok, "", "", 404, "not_found")
+	env.expect("DELETE", "/v1/account/sessions/nope", tok, "", "", 404, "not_found")
+	env.expect("DELETE", "/v1/account/sessions/"+sess2.ID, tok, "", "", 204, "")
+	env.expect("GET", "/v1/account", tok2, "", "", 401, "unauthorized")
+
+	env.expect("POST", "/v1/account/sign-out", tok, "", "", 204, "")
+	env.expect("GET", "/v1/account", tok, "", "", 401, "unauthorized")
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE action='user.signed_out' AND actor_user_id=$1 AND organization_id=$2 AND actor_role='owner'`, uid, ws["id"]).Scan(&n); err != nil || n != 1 {
+		t.Fatalf("sign-out audit %d %v", n, err)
+	}
+	env.expect("GET", "/v1/account", tokOther, "", "", 200, "")
 }

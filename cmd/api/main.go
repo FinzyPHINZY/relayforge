@@ -81,6 +81,7 @@ func main() {
 		EventRateLimit: cfg.EventRateLimit, ManagementRateLimit: cfg.ManagementRateLimit, DemoReceiverOrigin: cfg.DemoReceiverOrigin, RegionRole: cfg.RegionRole,
 		Accounts: &accounts.Store{DB: pool, IPHashKey: cfg.IPHashKey}, MagicLinks: magicLinks, GitHub: github,
 		DashboardToken: cfg.DashboardAPIToken, OAuthStartPerIPPerHour: cfg.OAuthStartPerIPPerHour,
+		MaxWorkspacesPerUser: cfg.MaxWorkspacesPerUser,
 	}
 	srv := &http.Server{Addr: cfg.ListenAddr, Handler: server.Router(), ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 * 1024}
 	go func() {

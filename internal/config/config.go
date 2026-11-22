@@ -23,6 +23,7 @@ type Config struct {
 	GitHubClientID, GitHubClientSecret                    string
 	DashboardAPIToken                                     string
 	OAuthStartPerIPPerHour                                int
+	MaxWorkspacesPerUser                                  int
 }
 
 func Load() (Config, error) {
@@ -102,6 +103,14 @@ func Load() (Config, error) {
 	c.OAuthStartPerIPPerHour, err = positiveEnv("OAUTH_START_PER_IP_PER_HOUR", 30)
 	if err != nil {
 		return c, err
+	}
+	c.MaxWorkspacesPerUser = 3
+	if raw := os.Getenv("MAX_WORKSPACES_PER_USER"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 || n > 100 {
+			return c, errors.New("MAX_WORKSPACES_PER_USER must be between 1 and 100")
+		}
+		c.MaxWorkspacesPerUser = n
 	}
 	c.DashboardAPIToken = os.Getenv("DASHBOARD_API_TOKEN")
 	if c.DashboardAPIToken != "" && len(c.DashboardAPIToken) < 32 {

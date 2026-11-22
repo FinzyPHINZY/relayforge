@@ -13,7 +13,7 @@ import (
 func writeAudit(r *http.Request, tx pgx.Tx, action, targetType, targetID string, details map[string]any) error {
 	p := r.Context().Value(principalKey).(principal)
 	return audit.Write(r.Context(), tx, audit.Entry{
-		OrganizationID: p.OrgID, ActorKeyID: p.KeyID, ActorRole: p.Role,
+		OrganizationID: p.OrgID, ActorKeyID: p.KeyID, ActorUserID: p.UserID, ActorRole: p.Role,
 		Action: action, TargetType: targetType, TargetID: targetID, Details: details,
 	})
 }

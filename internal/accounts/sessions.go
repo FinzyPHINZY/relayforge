@@ -140,9 +140,35 @@ func (s *Store) ListSessions(ctx context.Context, userID string) ([]SessionInfo,
 	return out, rows.Err()
 }
 
+// SignOut revokes the user's session and writes user.signed_out into every
+// active membership org, in one transaction. ErrNotFound if already revoked.
+func (s *Store) SignOut(ctx context.Context, userID, sessionID string) error {
+	tx, err := s.DB.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	tag, err := tx.Exec(ctx, `UPDATE sessions SET revoked_at=$3 WHERE id=$1 AND user_id=$2 AND revoked_at IS NULL`, sessionID, userID, s.now())
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrNotFound
+	}
+	if err := auditUserEvent(ctx, tx, userID, "user.signed_out", nil); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}
+
 // auditSignIn writes user.signed_in, inside the sign-in tx, into every active
 // org where the user is an active member, using that membership's role.
 func auditSignIn(ctx context.Context, tx pgx.Tx, userID, method string) error {
+	return auditUserEvent(ctx, tx, userID, "user.signed_in", map[string]any{"method": method})
+}
+
+// auditUserEvent writes a user-targeted audit row into each active membership org.
+func auditUserEvent(ctx context.Context, tx pgx.Tx, userID, action string, details map[string]any) error {
 	rows, err := tx.Query(ctx, `SELECT m.organization_id, m.role FROM team_members m JOIN organizations o ON o.id = m.organization_id
 		WHERE m.user_id=$1 AND m.status='active' AND o.status='active' ORDER BY m.organization_id`, userID)
 	if err != nil {
@@ -163,8 +189,8 @@ func auditSignIn(ctx context.Context, tx pgx.Tx, userID, method string) error {
 		return err
 	}
 	for _, m := range ms {
-		if err := audit.Write(ctx, tx, audit.Entry{OrganizationID: m.org, ActorUserID: userID, ActorRole: m.role, Action: "user.signed_in",
-			TargetType: "user", TargetID: userID, Details: map[string]any{"method": method}}); err != nil {
+		if err := audit.Write(ctx, tx, audit.Entry{OrganizationID: m.org, ActorUserID: userID, ActorRole: m.role, Action: action,
+			TargetType: "user", TargetID: userID, Details: details}); err != nil {
 			return err
 		}
 	}

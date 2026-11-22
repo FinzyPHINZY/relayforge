@@ -49,13 +49,29 @@ type Server struct {
 	GitHub                 *accounts.GitHubConfig // nil = disabled
 	DashboardToken         string
 	OAuthStartPerIPPerHour int
+	MaxWorkspacesPerUser   int // 0 = default (3)
 }
+
+// principal is the authenticated caller. API keys set KeyID and always carry
+// an OrgID; console sessions set UserID and SessionID, and carry an OrgID only
+// when X-RelayForge-Org names an active membership.
 type principal struct {
-	KeyID  string
-	OrgID  string
-	Role   string
-	Scopes map[string]bool
+	KeyID     string
+	UserID    string
+	SessionID string
+	OrgID     string
+	Role      string
+	Scopes    map[string]bool
+	user      accounts.User // session principals only
 }
+
+// allScopes lists every API scope; session principals get each one their role allows.
+var allScopes = []string{
+	"events:read", "events:write", "endpoints:read", "endpoints:write",
+	"deliveries:read", "deliveries:write", "metrics:read",
+	"team:read", "team:write", "keys:read", "keys:write",
+}
+
 type contextKey int
 
 const principalKey contextKey = 1
@@ -71,28 +87,33 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.regionWrites)
 		r.Use(s.rateLimit)
 		r.Get("/me", s.currentPrincipal)
-		r.With(require("events:write")).Post("/events", s.createEvent)
-		r.With(require("events:read")).Get("/events", s.listEvents)
-		r.With(require("events:read")).Get("/events/{id}", s.getEvent)
-		r.With(require("events:read")).Post("/events/{id}/reveal", s.revealEventPayload)
-		r.With(require("endpoints:write")).Post("/endpoints", s.createEndpoint)
-		r.With(require("endpoints:read")).Get("/endpoints", s.listEndpoints)
-		r.With(require("endpoints:read")).Get("/endpoints/{id}", s.getEndpoint)
-		r.With(require("endpoints:write")).Patch("/endpoints/{id}", s.patchEndpoint)
-		r.With(require("endpoints:write")).Delete("/endpoints/{id}", s.deleteEndpoint)
-		r.With(require("endpoints:write")).Post("/endpoints/{id}/rotate-secret", s.rotateEndpointSecret)
-		r.With(require("endpoints:write")).Post("/endpoints/{id}/verify", s.verifyEndpoint)
-		r.With(require("deliveries:read")).Get("/deliveries", s.listDeliveries)
-		r.With(require("deliveries:read")).Get("/deliveries/{id}", s.getDelivery)
-		r.With(require("deliveries:write")).Post("/deliveries/{id}/replay", s.replayDelivery)
-		r.With(require("deliveries:write")).Patch("/deliveries/{id}/review", s.reviewDelivery)
-		r.With(require("metrics:read")).Get("/metrics/summary", s.metricsSummary)
-		r.With(require("metrics:read")).Get("/analytics/deliveries", s.deliveryAnalytics)
-		r.With(require("metrics:read")).Get("/analytics/overview", s.overviewAnalytics)
-		r.With(require("team:read")).Get("/team/members", s.listTeamMembers)
-		r.With(require("team:write")).Post("/team/members", s.createTeamMember)
-		r.With(require("team:write")).Patch("/team/members/{id}", s.patchTeamMember)
-		r.With(require("team:read")).Get("/audit", s.listAuditEvents)
+		r.Route("/account", s.accountRoutes)
+		// Every tenant(r) caller lives in this group, so OrgID is never empty there.
+		r.Group(func(r chi.Router) {
+			r.Use(requireOrg)
+			r.With(require("events:write")).Post("/events", s.createEvent)
+			r.With(require("events:read")).Get("/events", s.listEvents)
+			r.With(require("events:read")).Get("/events/{id}", s.getEvent)
+			r.With(require("events:read")).Post("/events/{id}/reveal", s.revealEventPayload)
+			r.With(require("endpoints:write")).Post("/endpoints", s.createEndpoint)
+			r.With(require("endpoints:read")).Get("/endpoints", s.listEndpoints)
+			r.With(require("endpoints:read")).Get("/endpoints/{id}", s.getEndpoint)
+			r.With(require("endpoints:write")).Patch("/endpoints/{id}", s.patchEndpoint)
+			r.With(require("endpoints:write")).Delete("/endpoints/{id}", s.deleteEndpoint)
+			r.With(require("endpoints:write")).Post("/endpoints/{id}/rotate-secret", s.rotateEndpointSecret)
+			r.With(require("endpoints:write")).Post("/endpoints/{id}/verify", s.verifyEndpoint)
+			r.With(require("deliveries:read")).Get("/deliveries", s.listDeliveries)
+			r.With(require("deliveries:read")).Get("/deliveries/{id}", s.getDelivery)
+			r.With(require("deliveries:write")).Post("/deliveries/{id}/replay", s.replayDelivery)
+			r.With(require("deliveries:write")).Patch("/deliveries/{id}/review", s.reviewDelivery)
+			r.With(require("metrics:read")).Get("/metrics/summary", s.metricsSummary)
+			r.With(require("metrics:read")).Get("/analytics/deliveries", s.deliveryAnalytics)
+			r.With(require("metrics:read")).Get("/analytics/overview", s.overviewAnalytics)
+			r.With(require("team:read")).Get("/team/members", s.listTeamMembers)
+			r.With(require("team:write")).Post("/team/members", s.createTeamMember)
+			r.With(require("team:write")).Patch("/team/members/{id}", s.patchTeamMember)
+			r.With(require("team:read")).Get("/audit", s.listAuditEvents)
+		})
 	})
 	return otelhttp.NewHandler(r, "http.server")
 }
@@ -106,7 +127,11 @@ func (s *Server) currentPrincipal(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	slices.Sort(scopes)
-	writeJSON(w, 200, map[string]any{"role": p.Role, "scopes": scopes})
+	out := map[string]any{"role": p.Role, "scopes": scopes}
+	if p.UserID != "" {
+		out["user_id"] = p.UserID
+	}
+	writeJSON(w, 200, out)
 }
 
 // A standby can serve authenticated reads from its database replica, but it
@@ -140,6 +165,10 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		parts := strings.SplitN(r.Header.Get("Authorization"), " ", 2)
 		if len(parts) != 2 || parts[0] != "Bearer" {
 			problem(w, 401, "unauthorized", "Bearer API key required")
+			return
+		}
+		if strings.HasPrefix(parts[1], sessionTokenPrefix) {
+			s.authenticateSession(w, r, parts[1], next)
 			return
 		}
 		prefix, err := security.KeyPrefix(parts[1])
@@ -180,6 +209,10 @@ type rateEntry struct {
 func (s *Server) rateLimit(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.Context().Value(principalKey).(principal)
+		subject := p.KeyID
+		if subject == "" {
+			subject = "u:" + p.UserID
+		}
 		category := "management"
 		limit := s.ManagementRateLimit
 		if r.Method == http.MethodPost && r.URL.Path == "/v1/events" {
@@ -194,7 +227,7 @@ func (s *Server) rateLimit(next http.Handler) http.Handler {
 			}
 		}
 		if s.DistributedLimiter != nil {
-			allowed, retryAfter, err := s.DistributedLimiter.Allow(r.Context(), p.KeyID, category, limit)
+			allowed, retryAfter, err := s.DistributedLimiter.Allow(r.Context(), subject, category, limit)
 			if err == nil {
 				if !allowed {
 					w.Header().Set("Retry-After", strconv.Itoa(retryAfter))
@@ -215,7 +248,7 @@ func (s *Server) rateLimit(next http.Handler) http.Handler {
 			now = s.rateNow()
 		}
 		window := now.Unix() / 60
-		key := p.KeyID + ":" + category
+		key := subject + ":" + category
 		s.limitMu.Lock()
 		if s.limitEntries == nil {
 			s.limitEntries = make(map[string]rateEntry)
@@ -258,6 +291,17 @@ func require(scope string) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// requireOrg rejects principals without an organization (org-less sessions).
+func requireOrg(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Context().Value(principalKey).(principal).OrgID == "" {
+			problem(w, 400, "org_required", "X-RelayForge-Org header required")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 func tenant(r *http.Request) string { return r.Context().Value(principalKey).(principal).OrgID }
