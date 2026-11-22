@@ -1,6 +1,6 @@
 import { ArrowLeft, ArrowRight, Check, Clock3, KeyRound, LockKeyhole, Webhook } from "lucide-react";
 import Link from "next/link";
-import { signIn } from "@/app/actions";
+import { signInWithKey } from "@/app/actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import "./login.css";
@@ -19,7 +19,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
       </section>
       <section className="login-form-panel" aria-labelledby="login-heading"><div className="login-form-top"><Link href="/" className="login-back"><ArrowLeft size={15} aria-hidden="true" /> Back to RelayForge</Link><span>SECURE ACCESS</span></div>
         <div className="login-form-content"><div className="login-form-icon"><KeyRound size={24} aria-hidden="true" /></div><span className="login-kicker">WELCOME BACK</span><h2 id="login-heading">Sign in to your workspace</h2><p>Use your scoped RelayForge API key to inspect deliveries and manage endpoints.</p>
-          <form action={signIn} className="login-form"><label htmlFor="apiKey">API key</label><Input id="apiKey" name="apiKey" type="password" autoComplete="off" placeholder="whk_…" required /><Button className="login-submit">Open console <ArrowRight size={17} aria-hidden="true" /></Button></form>
+          <form action={signInWithKey} className="login-form"><label htmlFor="apiKey">API key</label><Input id="apiKey" name="apiKey" type="password" autoComplete="off" placeholder="whk_…" required /><Button className="login-submit">Open console <ArrowRight size={17} aria-hidden="true" /></Button></form>
           {message ? <p role="alert" className="login-error">{message}</p> : null}
           <p className="login-security"><LockKeyhole size={15} aria-hidden="true" /> Your key is encrypted in an HTTP-only session cookie. Browser code never calls the API with it.</p>
         </div>

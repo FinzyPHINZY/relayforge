@@ -5,16 +5,16 @@ import { EndpointControls } from "@/components/endpoint-controls";
 import { PageTitle, Shell } from "@/components/shell";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ApiError, readApi, requireKey } from "@/lib/api";
+import { ApiError, readApi, requireOrgSession } from "@/lib/api";
 import { dateTime } from "@/lib/format";
 import type { Endpoint, Principal } from "@/lib/types";
 
 export default async function EndpointPage({ params }: { params: Promise<{ id: string }> }) {
-  const key = await requireKey();
+  const session = await requireOrgSession();
   const { id } = await params;
   let endpoint: Endpoint;
-  try { endpoint = await readApi<Endpoint>(key, `/v1/endpoints/${encodeURIComponent(id)}`); } catch (error) { if (error instanceof ApiError && error.status === 404) notFound(); throw error; }
-  const me = await readApi<Principal>(key, "/v1/me");
+  try { endpoint = await readApi<Endpoint>(session, `/v1/endpoints/${encodeURIComponent(id)}`); } catch (error) { if (error instanceof ApiError && error.status === 404) notFound(); throw error; }
+  const me = await readApi<Principal>(session, "/v1/me");
   const canWrite = me.scopes.includes("endpoints:write") && endpoint.status !== "disabled";
   const overlap = endpoint.signing_secrets?.find((secret) => secret.state === "overlap" && secret.overlap_until && new Date(secret.overlap_until).getTime() > Date.now());
   return <Shell>

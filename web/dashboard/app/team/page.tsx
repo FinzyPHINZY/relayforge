@@ -3,14 +3,14 @@ import { UsersRound } from "lucide-react";
 import { CreateMemberForm, MemberAccessForm } from "@/components/team-controls";
 import { EmptyState, PageTitle, Shell } from "@/components/shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireKey } from "@/lib/api";
+import { readApi, requireOrgSession } from "@/lib/api";
 import { dateTime } from "@/lib/format";
 import type { Principal, TeamMember } from "@/lib/types";
 
 export default async function TeamPage() {
-  const key = await requireKey();
-  const me = await readApi<Principal>(key, "/v1/me");
-  const members = me.scopes.includes("team:read") ? await readApi<{ data: TeamMember[] }>(key, "/v1/team/members") : { data: [] };
+  const session = await requireOrgSession();
+  const me = await readApi<Principal>(session, "/v1/me");
+  const members = me.scopes.includes("team:read") ? await readApi<{ data: TeamMember[] }>(session, "/v1/team/members") : { data: [] };
   const canManage = me.role === "owner" && me.scopes.includes("team:write");
   const canAudit = me.role === "owner" && me.scopes.includes("team:read");
   return <Shell><PageTitle eyebrow="Access" title="Team members" description="Each member has a personal API key and a role checked on every request." />

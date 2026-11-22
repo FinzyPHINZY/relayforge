@@ -2,14 +2,14 @@ import Link from "next/link";
 import { EmptyState, PageTitle, Shell } from "@/components/shell";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireKey } from "@/lib/api";
+import { readApi, requireOrgSession } from "@/lib/api";
 import { dateTime, shortId } from "@/lib/format";
 import type { Delivery, Page } from "@/lib/types";
 
 const statuses = ["all", "pending", "processing", "retry_wait", "succeeded", "exhausted", "cancelled"];
 
 export default async function DeliveriesPage({ searchParams }: { searchParams: Promise<{ status?: string; event_id?: string; endpoint_id?: string; cursor?: string }> }) {
-  const key = await requireKey();
+  const session = await requireOrgSession();
   const query = await searchParams;
   const status = statuses.includes(query.status ?? "all") ? query.status ?? "all" : "all";
   const params = new URLSearchParams({ limit: "50" });
@@ -17,7 +17,7 @@ export default async function DeliveriesPage({ searchParams }: { searchParams: P
   if (query.event_id) params.set("event_id", query.event_id);
   if (query.endpoint_id) params.set("endpoint_id", query.endpoint_id);
   if (query.cursor) params.set("cursor", query.cursor);
-  const page = await readApi<Page<Delivery>>(key, `/v1/deliveries?${params}`);
+  const page = await readApi<Page<Delivery>>(session, `/v1/deliveries?${params}`);
   const filterQuery = new URLSearchParams();
   if (query.event_id) filterQuery.set("event_id", query.event_id);
   if (query.endpoint_id) filterQuery.set("endpoint_id", query.endpoint_id);

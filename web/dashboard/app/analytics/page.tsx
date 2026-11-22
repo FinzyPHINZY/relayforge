@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Activity, CheckCircle2, CircleAlert } from "lucide-react";
 import { PageTitle, Shell } from "@/components/shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireKey } from "@/lib/api";
+import { readApi, requireOrgSession } from "@/lib/api";
 import type { AnalyticsBucket, DeliveryAnalytics } from "@/lib/types";
 
 type Window = "24h" | "7d" | "30d";
@@ -32,10 +32,10 @@ function chartBars(buckets: AnalyticsBucket[], window: Window): Bar[] {
 }
 
 export default async function AnalyticsPage({ searchParams }: { searchParams: Promise<{ window?: string }> }) {
-  const key = await requireKey();
+  const session = await requireOrgSession();
   const requested = (await searchParams).window;
   const window: Window = requested === "7d" || requested === "30d" ? requested : "24h";
-  const analytics = await readApi<DeliveryAnalytics>(key, `/v1/analytics/deliveries?window=${window}`);
+  const analytics = await readApi<DeliveryAnalytics>(session, `/v1/analytics/deliveries?window=${window}`);
   const bars = chartBars(analytics.buckets, window);
   const total = bars.reduce((sum, bar) => sum + bar.attempts, 0);
   const succeeded = bars.reduce((sum, bar) => sum + bar.succeeded, 0);

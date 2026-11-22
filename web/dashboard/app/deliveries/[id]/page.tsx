@@ -5,19 +5,19 @@ import { PageTitle, Shell, EmptyState } from "@/components/shell";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { ApiError, readApi, requireKey } from "@/lib/api";
+import { ApiError, readApi, requireOrgSession } from "@/lib/api";
 import { buildDeliveryTimeline } from "@/lib/delivery-timeline";
 import { dateTime } from "@/lib/format";
 import type { DeliveryDetail, Principal } from "@/lib/types";
 
 export default async function DeliveryPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
-  const key = await requireKey();
+  const session = await requireOrgSession();
   const { id } = await params;
   const { error: actionError } = await searchParams;
   let result: DeliveryDetail;
-  try { result = await readApi<DeliveryDetail>(key, `/v1/deliveries/${encodeURIComponent(id)}`); }
+  try { result = await readApi<DeliveryDetail>(session, `/v1/deliveries/${encodeURIComponent(id)}`); }
   catch (error) { if (error instanceof ApiError && error.status === 404) notFound(); throw error; }
-  const me = await readApi<Principal>(key, "/v1/me");
+  const me = await readApi<Principal>(session, "/v1/me");
   const { delivery, attempts, review_history: reviewHistory } = result;
   const timeline = buildDeliveryTimeline(result);
   const canWrite = me.scopes.includes("deliveries:write");

@@ -6,16 +6,16 @@ import { EmptyState, PageTitle, Shell } from "@/components/shell";
 import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireKey } from "@/lib/api";
+import { readApi, requireOrgSession } from "@/lib/api";
 import { dateTime } from "@/lib/format";
 import type { Endpoint, Page, Principal } from "@/lib/types";
 
 export default async function EndpointsPage({ searchParams }: { searchParams: Promise<{ cursor?: string; error?: string }> }) {
-  const key = await requireKey();
+  const session = await requireOrgSession();
   const { cursor, error } = await searchParams;
   const params = new URLSearchParams({ limit: "50" });
   if (cursor) params.set("cursor", cursor);
-  const [page, me] = await Promise.all([readApi<Page<Endpoint>>(key, `/v1/endpoints?${params}`), readApi<Principal>(key, "/v1/me")]);
+  const [page, me] = await Promise.all([readApi<Page<Endpoint>>(session, `/v1/endpoints?${params}`), readApi<Principal>(session, "/v1/me")]);
   const canWrite = me.scopes.includes("endpoints:write");
   return <Shell><PageTitle eyebrow="Destinations" title="Endpoints" description="Manage subscriptions, verification, transformations, and alerts." />
     {error ? <p role="alert" className="mb-5 rounded-lg border border-rose-400/20 bg-rose-400/10 p-3 text-sm text-rose-200">Could not update the endpoint.</p> : null}
