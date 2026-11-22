@@ -33,7 +33,7 @@ func TestGitHubStartURL(t *testing.T) {
 }
 
 func TestGitHubExchange(t *testing.T) {
-	failToken := false
+	failToken, failUser, unverified := false, false, false
 	mux := http.NewServeMux()
 	mux.HandleFunc("/login/oauth/access_token", func(w http.ResponseWriter, r *http.Request) {
 		_ = r.ParseForm()
@@ -55,11 +55,19 @@ func TestGitHubExchange(t *testing.T) {
 		return true
 	}
 	mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+		if failUser {
+			http.Error(w, "boom", 500)
+			return
+		}
 		if auth(w, r) {
 			_, _ = w.Write([]byte(`{"id":42,"login":"bo","name":"Bo A","avatar_url":"https://a/1"}`))
 		}
 	})
 	mux.HandleFunc("/user/emails", func(w http.ResponseWriter, r *http.Request) {
+		if unverified {
+			_, _ = w.Write([]byte(`[{"email":"bo@x.io","primary":true,"verified":false}]`))
+			return
+		}
 		if auth(w, r) {
 			_, _ = w.Write([]byte(`[{"email":"x@x.io","primary":false,"verified":true},{"email":"Bo@X.io","primary":true,"verified":true}]`))
 		}
@@ -74,7 +82,16 @@ func TestGitHubExchange(t *testing.T) {
 	if p.ID != 42 || p.Login != "bo" || p.Name != "Bo A" || p.AvatarURL != "https://a/1" || p.VerifiedPrimaryEmail != "Bo@X.io" {
 		t.Fatalf("profile %+v", p)
 	}
-	failToken = true
+	unverified = true
+	p, err = g.Exchange(context.Background(), "c1", "v1")
+	if err != nil || p.VerifiedPrimaryEmail != "" {
+		t.Fatalf("unverified primary: %v %+v", err, p)
+	}
+	unverified, failUser = false, true
+	if _, err := g.Exchange(context.Background(), "c1", "v1"); err == nil {
+		t.Fatal("expected error on /user 500")
+	}
+	failUser, failToken = false, true
 	if _, err := g.Exchange(context.Background(), "c1", "v1"); err == nil {
 		t.Fatal("expected error on token error")
 	}

@@ -184,6 +184,8 @@ func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userA
 	if display == "" {
 		display = p.Login
 	}
+	display = truncateRunes(display, 120)
+	p.AvatarURL = truncateRunes(p.AvatarURL, 2048)
 	now := s.now()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -260,4 +262,11 @@ func nullIfEmpty(s string) *string {
 		return nil
 	}
 	return &s
+}
+
+func truncateRunes(s string, n int) string {
+	if r := []rune(s); len(r) > n {
+		return string(r[:n])
+	}
+	return s
 }

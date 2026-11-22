@@ -379,3 +379,55 @@ func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
 		t.Fatalf("create: %v %+v", err, nu)
 	}
 }
+
+func TestGitHubLongProfileFieldsTruncated(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	st := &accounts.Store{DB: pool, IPHashKey: []byte("k")}
+	long := strings.Repeat("é", 200)
+	p := accounts.GitHubProfile{ID: 21, Login: "l", Name: long, AvatarURL: "https://a/" + strings.Repeat("x", 3000), VerifiedPrimaryEmail: "long@x.io"}
+	for i := 0; i < 2; i++ { // create, then refresh
+		_, u, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
+		if err != nil {
+			t.Fatalf("sign-in %d: %v", i, err)
+		}
+		var dn, av string
+		if err := pool.QueryRow(ctx, `SELECT display_name, avatar_url FROM users WHERE id=$1`, u.ID).Scan(&dn, &av); err != nil {
+			t.Fatal(err)
+		}
+		if len([]rune(dn)) != 120 || len([]rune(av)) != 2048 {
+			t.Fatalf("lens %d %d", len([]rune(dn)), len([]rune(av)))
+		}
+	}
+}
+
+func TestMagicLinkIdentityConflict(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	st := &accounts.Store{DB: pool, IPHashKey: []byte("k")}
+	a, _ := id.New()
+	b, _ := id.New()
+	for _, q := range [][]any{{a, "a@x.io"}, {b, "c@x.io"}} {
+		if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, email_verified_at) VALUES ($1,$2,now())`, q...); err != nil {
+			t.Fatal(err)
+		}
+	}
+	iid, _ := id.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO user_identities (id, user_id, provider, provider_subject) VALUES ($1,$2,'email','c@x.io')`, iid, a); err != nil {
+		t.Fatal(err)
+	}
+	mailer := &mail.LogMailer{}
+	cfg := accounts.MagicLinkConfig{DashboardURL: "https://app.example", Mailer: mailer, Limiter: &fakeLimiter{}, PerEmailPerHour: 5, PerIPPerHour: 100}
+	if err := st.RequestMagicLink(ctx, cfg, "c@x.io", "1.2.3.4"); err != nil {
+		t.Fatal(err)
+	}
+	_, tok, _ := strings.Cut(mailer.Sent[0].Text, "/auth/email?token=")
+	_, _, err := st.ConsumeMagicLink(ctx, tok[:47], "1.2.3.4", "ua")
+	if !errors.Is(err, accounts.ErrIdentityConflict) {
+		t.Fatalf("err %v", err)
+	}
+	var n int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions`).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("sessions %d %v", n, err)
+	}
+}
