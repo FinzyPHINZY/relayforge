@@ -6,12 +6,14 @@ import { PageTitle, Shell } from "@/components/shell";
 import { StatusBadge } from "@/components/status-badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ApiError, readApi, requireOrgSession } from "@/lib/api";
+import { uuidPattern } from "@/lib/session-value";
 import { dateTime } from "@/lib/format";
 import type { Endpoint, Principal } from "@/lib/types";
 
 export default async function EndpointPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireOrgSession();
   const { id } = await params;
+  if (!uuidPattern.test(id)) notFound();
   let endpoint: Endpoint;
   try { endpoint = await readApi<Endpoint>(session, `/v1/endpoints/${encodeURIComponent(id)}`); } catch (error) { if (error instanceof ApiError && error.status === 404) notFound(); throw error; }
   const me = await readApi<Principal>(session, "/v1/me");

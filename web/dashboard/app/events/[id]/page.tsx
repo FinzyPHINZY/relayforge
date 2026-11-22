@@ -5,12 +5,14 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PayloadReveal } from "@/components/payload-reveal";
 import { StatusBadge } from "@/components/status-badge";
 import { ApiError, readApi, requireOrgSession } from "@/lib/api";
+import { uuidPattern } from "@/lib/session-value";
 import { dateTime, shortId } from "@/lib/format";
 import type { Delivery, Event, Page, Principal } from "@/lib/types";
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const session = await requireOrgSession();
   const { id } = await params;
+  if (!uuidPattern.test(id)) notFound();
   let event: Event;
   try { event = await readApi<Event>(session, `/v1/events/${encodeURIComponent(id)}`); }
   catch (error) { if (error instanceof ApiError && error.status === 404) notFound(); throw error; }

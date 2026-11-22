@@ -60,6 +60,7 @@ export default async function LoginPage({ searchParams }: { searchParams: Promis
     </div>
     {alert}
     <p className="login-security"><LockKeyhole size={15} aria-hidden="true" /> Your session is encrypted in an HTTP-only cookie. Browser code never sees your sign-in token.</p>
-    <p className="login-alt"><Link href="/login?method=key"><KeyRound size={14} aria-hidden="true" /> Sign in with an API key</Link></p>
+    <hr className="login-rule" />
+    <p className="login-alt login-alt-key"><Link href="/login?method=key"><KeyRound size={14} aria-hidden="true" /> Sign in with an API key</Link></p>
   </AuthShell>;
 }

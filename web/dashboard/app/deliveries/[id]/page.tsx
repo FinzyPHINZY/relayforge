@@ -6,6 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { ApiError, readApi, requireOrgSession } from "@/lib/api";
+import { uuidPattern } from "@/lib/session-value";
 import { buildDeliveryTimeline } from "@/lib/delivery-timeline";
 import { dateTime } from "@/lib/format";
 import type { DeliveryDetail, Principal } from "@/lib/types";
@@ -13,6 +14,7 @@ import type { DeliveryDetail, Principal } from "@/lib/types";
 export default async function DeliveryPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ error?: string }> }) {
   const session = await requireOrgSession();
   const { id } = await params;
+  if (!uuidPattern.test(id)) notFound();
   const { error: actionError } = await searchParams;
   let result: DeliveryDetail;
   try { result = await readApi<DeliveryDetail>(session, `/v1/deliveries/${encodeURIComponent(id)}`); }

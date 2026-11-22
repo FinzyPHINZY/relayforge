@@ -2,6 +2,7 @@ import type { NextRequest } from "next/server";
 import { ApiError, authApi, clientIpFrom } from "@/lib/api";
 import { saveOAuthCookie } from "@/lib/oauth-cookie";
 import { redirectTo } from "@/lib/redirect-response";
+import { expectedOrigin, isSameOriginRequest } from "@/lib/same-origin";
 
 export const dynamic = "force-dynamic";
 
@@ -11,13 +12,16 @@ function authorizeUrl(raw: unknown): URL | null {
   if (typeof raw !== "string") return null;
   try {
     const url = new URL(raw);
-    return url.protocol === "https:" && url.pathname === "/login/oauth/authorize" ? url : null;
+    return url.protocol === "https:" && url.host === "github.com" && url.pathname === "/login/oauth/authorize" ? url : null;
   } catch {
     return null;
   }
 }
 
-async function start(request: NextRequest, status: 302 | 303) {
+// POST only, from the login page's form. There is deliberately no GET, so a
+// link or prefetch can't start a flow, and cross-site posts are refused.
+export async function POST(request: NextRequest) {
+  if (!isSameOriginRequest(request.headers, expectedOrigin(process.env.DASHBOARD_PUBLIC_URL, request.url))) return redirectTo("/login?error=oauth", 303);
   let body: Start;
   try {
     body = await authApi<Start>("/v1/auth/github/start", {}, clientIpFrom(request.headers));
@@ -27,14 +31,5 @@ async function start(request: NextRequest, status: 302 | 303) {
   const target = authorizeUrl(body.authorize_url);
   if (!target || !body.state || !body.verifier) return redirectTo("/login?error=oauth", 303);
   await saveOAuthCookie({ state: body.state, verifier: body.verifier });
-  return redirectTo(target, status);
-}
-
-// The login page submits a POST form, so link prefetching never starts a flow.
-export async function POST(request: NextRequest) {
-  return start(request, 303);
-}
-
-export async function GET(request: NextRequest) {
-  return start(request, 302);
+  return redirectTo(target, 303);
 }

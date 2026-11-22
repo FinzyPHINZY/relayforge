@@ -24,7 +24,9 @@ export async function requestMagicLink(formData: FormData) {
   try {
     await authApi("/v1/auth/email/start", { email }, await clientIp());
   } catch (caught) {
-    error = caught instanceof ApiError ? caught : null;
+    if (caught instanceof ApiError) error = caught;
+    // Never log the address; the class and message are enough to debug.
+    else console.error("magic link request failed:", caught instanceof Error ? `${caught.name}: ${caught.message}` : typeof caught);
   }
   if (error?.status === 422) redirect("/login?error=invalid_email");
   if (error?.status === 429) redirect("/login?error=rate");
@@ -39,7 +41,7 @@ export async function confirmMagicLink(formData: FormData) {
     const body = await authApi<SessionBody>("/v1/auth/email/consume", { token }, await clientIp());
     destination = await completeSignIn(body.session_token);
   } catch (error) {
-    if (error instanceof ApiError && error.status === 400) redirect("/login?error=link");
+    if (error instanceof ApiError && error.code === "link_invalid") redirect("/login?error=link");
     if (error instanceof ApiError && error.status === 429) redirect("/login?error=rate");
     redirect("/login?error=unavailable");
   }
