@@ -110,7 +110,7 @@ Resources:
     Type: AWS::IAM::InstanceProfile
     Metadata:
       com.aws.cloudformation.Context:
-        why: Attaches SSM and release-read credentials to the EC2 host.
+        why: Attaches SSM, release-read, and SES sign-in send credentials to the EC2 host.
         must: Use the host role only.
     Properties:
       Roles: [!Ref HostRole]
@@ -179,7 +179,7 @@ Resources:
     Type: AWS::EC2::EIP
     Metadata:
       com.aws.cloudformation.Context:
-        why: Keeps the two Namecheap DNS A records stable through host restarts.
+        why: Keeps the two Route 53 A records stable through host restarts.
         must: Keep associated with the deployment host.
     Properties:
       Domain: vpc

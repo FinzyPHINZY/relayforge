@@ -181,7 +181,7 @@ locally to see the sign-in link (never in production). GitHub sign-in needs an
 OAuth App with callback `http://localhost:3000/auth/github/callback` and both
 `GITHUB_CLIENT_ID` and `GITHUB_CLIENT_SECRET`. To give a user access to an
 existing organization, run
-`go run ./cmd/tenant-admin -action link-owner -org-id <id> -email <addr>`, then
+`DATABASE_URL='postgres://webhooks:webhooks@localhost:5432/webhooks?sslmode=disable' go run ./cmd/tenant-admin -action link-owner -org-id <id> -email <addr>`, then
 sign in at `http://localhost:3000/login` with that address. Production uses
 Amazon SES in eu-north-1; see `deploy/aws/README.md`.
 

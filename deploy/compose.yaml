@@ -132,7 +132,7 @@ services:
     restart: unless-stopped
   caddy:
     profiles: ["public"]
-    image: caddy:2-alpine
+    image: caddy:2.10-alpine
     ports:
       - "80:80"
       - "443:443"

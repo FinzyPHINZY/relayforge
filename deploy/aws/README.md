@@ -100,14 +100,47 @@ are done by the project owner.
    ```
 
 5. **Request SES production access.** New SES accounts are in the sandbox:
-   they send only to verified addresses, so sign-in links to other people are
-   rejected. Request production access for `eu-north-1` in the SES console
-   (Account dashboard → Request production access) or with
-   `aws sesv2 put-account-details --production-access-enabled --mail-type TRANSACTIONAL --website-url https://relayforge.site --use-case-description "<how sign-in email is used>" --profile project --region eu-north-1`.
-   AWS reviews the request, typically within a day. Until it is granted,
-   verify your own address with
-   `aws sesv2 create-email-identity --email-identity <you@example.com> --profile project --region eu-north-1`
-   to test sign-in.
+   they send only to verified addresses, so sign-in emails to arbitrary users
+   work only after production access is granted. This is a request the project
+   owner makes and consents to: in the Amazon SES console in `eu-north-1`, open
+   **Account dashboard → Request production access**, choose the
+   transactional mail type, enter `https://relayforge.site`, and describe the
+   sign-in email use case. AWS reviews the request, typically within a day.
+
+   **Testing in the sandbox.** In the sandbox SES also authorizes
+   `ses:SendEmail` against the *recipient's* verified identity, so the stack's
+   least-privilege policy (domain identity only) is rejected with
+   `AccessDenied` for test sends. To test before production access, verify a
+   test address and add a temporary policy to the host role out of band:
+
+   ```sh
+   aws sesv2 create-email-identity --email-identity <test@example.com> \
+     --profile project --region eu-north-1
+   # Click the verification link SES emails to that address, then:
+   ROLE=$(aws cloudformation describe-stack-resource --stack-name relayforge-prod \
+     --logical-resource-id HostRole --query StackResourceDetail.PhysicalResourceId \
+     --output text --profile project --region eu-north-1)
+   aws iam put-role-policy --role-name "$ROLE" --policy-name ses-sandbox-test-recipient \
+     --profile project --policy-document '{
+       "Version": "2012-10-17",
+       "Statement": [{
+         "Effect": "Allow",
+         "Action": "ses:SendEmail",
+         "Resource": "arn:aws:ses:eu-north-1:<account-id>:identity/<test@example.com>",
+         "Condition": {"StringEquals": {"ses:FromAddress": "sign-in@relayforge.site"}}
+       }]
+     }'
+   ```
+
+   Sign in with that test address only. Once production access is granted,
+   remove the temporary policy (and optionally the test identity):
+
+   ```sh
+   aws iam delete-role-policy --role-name "$ROLE" \
+     --policy-name ses-sandbox-test-recipient --profile project
+   aws sesv2 delete-email-identity --email-identity <test@example.com> \
+     --profile project --region eu-north-1
+   ```
 6. **Deploy the application** by merging to `main` (see One-time setup step 4).
    The Compose file passes the new variables to the API and dashboard.
 7. **Link the bootstrap organization to your email.** On the host, find the
