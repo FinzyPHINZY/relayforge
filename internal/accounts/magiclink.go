@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"strconv"
 	"strings"
 	"time"
@@ -23,6 +24,10 @@ const (
 var (
 	ErrInvalidEmail = errors.New("invalid email")
 	ErrLinkInvalid  = errors.New("magic link invalid")
+	// ErrMailSend wraps a mailer failure after the link was stored; use errors.Is.
+	ErrMailSend = errors.New("magic link mail send failed")
+	// ErrLimiterUnavailable wraps a rate limiter failure; use errors.Is.
+	ErrLimiterUnavailable = errors.New("rate limiter unavailable")
 )
 
 // ErrRateLimited reports a limited request; use errors.As.
@@ -59,16 +64,19 @@ func (s *Store) RequestMagicLink(ctx context.Context, cfg MagicLinkConfig, rawEm
 	if ipSubject == "" {
 		ipSubject = "unknown"
 	}
+	if cfg.Limiter == nil {
+		return ErrLimiterUnavailable
+	}
 	ok, retry, err := cfg.Limiter.AllowWindow(ctx, hex.EncodeToString(s.HashIP(ipSubject)), "magic_link_ip", cfg.PerIPPerHour, time.Hour)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrLimiterUnavailable, err)
 	}
 	if !ok {
 		return ErrRateLimited{RetryAfter: retry}
 	}
 	ok, retry, err = cfg.Limiter.AllowWindow(ctx, hex.EncodeToString(security.Hash(email)), "magic_link_email", cfg.PerEmailPerHour, time.Hour)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: %w", ErrLimiterUnavailable, err)
 	}
 	if !ok {
 		return ErrRateLimited{RetryAfter: retry}
@@ -87,49 +95,52 @@ func (s *Store) RequestMagicLink(ctx context.Context, cfg MagicLinkConfig, rawEm
 		return err
 	}
 	link := strings.TrimRight(cfg.DashboardURL, "/") + "/auth/email?token=" + token
-	return cfg.Mailer.Send(ctx, mail.SignInMessage(email, link))
+	if err := cfg.Mailer.Send(ctx, mail.SignInMessage(email, link)); err != nil {
+		return fmt.Errorf("%w: %w", ErrMailSend, err)
+	}
+	return nil
 }
 
-// ConsumeMagicLink atomically spends the link, finds or creates the user and
-// opens a session.
-func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent string) (string, User, error) {
+// ConsumeMagicLink atomically spends the link, finds or creates the user,
+// opens a session and audits the sign-in in each of the user's active orgs.
+func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent string) (string, Session, User, error) {
 	if !strings.HasPrefix(token, magicLinkPrefix) || len(token) != magicLinkLen {
-		return "", User{}, ErrLinkInvalid
+		return "", Session{}, User{}, ErrLinkInvalid
 	}
 	now := s.now()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	var email string
 	err = tx.QueryRow(ctx, `UPDATE magic_links SET consumed_at=$2 WHERE token_hash=$1 AND consumed_at IS NULL AND expires_at > $2 RETURNING email`,
 		security.Hash(token), now).Scan(&email)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", User{}, ErrLinkInvalid
+		return "", Session{}, User{}, ErrLinkInvalid
 	}
 	if err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
 	uid, err := id.New()
 	if err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
 	local, _, _ := strings.Cut(email, "@")
 	// Insert-if-absent, then lock the row so concurrent first sign-ins converge on one user.
 	if _, err := tx.Exec(ctx, `INSERT INTO users (id, email, display_name, kind, created_at) VALUES ($1,$2,$3,'regular',$4)
 		ON CONFLICT (email) DO NOTHING`, uid, email, local, now); err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
 	u := User{Email: email}
 	var avatar, display *string
 	err = tx.QueryRow(ctx, `UPDATE users SET email_verified_at = COALESCE(email_verified_at, $2) WHERE email=$1 AND status='active'
 		RETURNING id, display_name, avatar_url, kind, status`, email, now).Scan(&u.ID, &display, &avatar, &u.Kind, &u.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", User{}, ErrLinkInvalid // user is deleting or deleted
+		return "", Session{}, User{}, ErrLinkInvalid // user is deleting or deleted
 	}
 	if err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
 	if display != nil {
 		u.DisplayName = *display
@@ -139,16 +150,19 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent strin
 	}
 	u.EmailVerified = true
 	if err := linkIdentity(ctx, tx, u.ID, "email", email, now); err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
-	sessionToken, _, err := s.CreateSession(ctx, tx, u.ID, ip, userAgent)
+	sessionToken, sess, err := s.CreateSession(ctx, tx, u.ID, ip, userAgent)
 	if err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
+	}
+	if err := auditSignIn(ctx, tx, u.ID, "email"); err != nil {
+		return "", Session{}, User{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
-	return sessionToken, u, nil
+	return sessionToken, sess, u, nil
 }
 
 // ErrIdentityConflict reports an external identity already bound to another user.

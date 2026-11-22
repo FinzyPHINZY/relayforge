@@ -101,7 +101,9 @@ func TestDistributedRateLimitAndRedisOutage(t *testing.T) {
 	}
 }
 
-func TestAllowWindowHourly(t *testing.T) {
+// startRedisLimiter starts a throwaway Redis container and returns a limiter on it.
+func startRedisLimiter(t testing.TB) *ratelimit.Redis {
+	t.Helper()
 	ctx := context.Background()
 	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
 		ContainerRequest: testcontainers.ContainerRequest{
@@ -115,7 +117,10 @@ func TestAllowWindowHourly(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = container.Terminate(context.Background()) })
-	host, _ := container.Host(ctx)
+	host, err := container.Host(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	port, err := container.MappedPort(ctx, "6379/tcp")
 	if err != nil {
 		t.Fatal(err)
@@ -126,6 +131,15 @@ func TestAllowWindowHourly(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = client.Close() })
 	l := ratelimit.NewRedis(client)
+	if err := l.Ping(ctx); err != nil {
+		t.Fatal(err)
+	}
+	return l
+}
+
+func TestAllowWindowHourly(t *testing.T) {
+	ctx := context.Background()
+	l := startRedisLimiter(t)
 	for i := 0; i < 5; i++ {
 		ok, _, err := l.AllowWindow(ctx, "subj", "magic_link_email", 5, time.Hour)
 		if err != nil || !ok {

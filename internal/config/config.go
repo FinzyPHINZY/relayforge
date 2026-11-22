@@ -21,6 +21,8 @@ type Config struct {
 	IPHashKey                                             []byte
 	MagicLinkPerEmailPerHour, MagicLinkPerIPPerHour       int
 	GitHubClientID, GitHubClientSecret                    string
+	DashboardAPIToken                                     string
+	OAuthStartPerIPPerHour                                int
 }
 
 func Load() (Config, error) {
@@ -96,6 +98,14 @@ func Load() (Config, error) {
 	c.MagicLinkPerIPPerHour, err = positiveEnv("MAGIC_LINK_PER_IP_PER_HOUR", 20)
 	if err != nil {
 		return c, err
+	}
+	c.OAuthStartPerIPPerHour, err = positiveEnv("OAUTH_START_PER_IP_PER_HOUR", 30)
+	if err != nil {
+		return c, err
+	}
+	c.DashboardAPIToken = os.Getenv("DASHBOARD_API_TOKEN")
+	if c.DashboardAPIToken != "" && len(c.DashboardAPIToken) < 32 {
+		return c, errors.New("DASHBOARD_API_TOKEN must be at least 32 characters")
 	}
 	c.GitHubClientID = os.Getenv("GITHUB_CLIENT_ID")
 	c.GitHubClientSecret = os.Getenv("GITHUB_CLIENT_SECRET")

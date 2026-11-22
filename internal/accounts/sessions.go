@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5"
+	"webhook_delivery/internal/audit"
 	"webhook_delivery/internal/id"
 	"webhook_delivery/internal/security"
 )
@@ -137,4 +138,35 @@ func (s *Store) ListSessions(ctx context.Context, userID string) ([]SessionInfo,
 		out = append(out, si)
 	}
 	return out, rows.Err()
+}
+
+// auditSignIn writes user.signed_in, inside the sign-in tx, into every active
+// org where the user is an active member, using that membership's role.
+func auditSignIn(ctx context.Context, tx pgx.Tx, userID, method string) error {
+	rows, err := tx.Query(ctx, `SELECT m.organization_id, m.role FROM team_members m JOIN organizations o ON o.id = m.organization_id
+		WHERE m.user_id=$1 AND m.status='active' AND o.status='active' ORDER BY m.organization_id`, userID)
+	if err != nil {
+		return err
+	}
+	type membership struct{ org, role string }
+	var ms []membership
+	for rows.Next() {
+		var m membership
+		if err := rows.Scan(&m.org, &m.role); err != nil {
+			rows.Close()
+			return err
+		}
+		ms = append(ms, m)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for _, m := range ms {
+		if err := audit.Write(ctx, tx, audit.Entry{OrganizationID: m.org, ActorUserID: userID, ActorRole: m.role, Action: "user.signed_in",
+			TargetType: "user", TargetID: userID, Details: map[string]any{"method": method}}); err != nil {
+			return err
+		}
+	}
+	return nil
 }

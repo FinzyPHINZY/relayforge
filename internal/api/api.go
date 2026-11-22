@@ -18,6 +18,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"webhook_delivery/internal/accounts"
 	"webhook_delivery/internal/health"
 	"webhook_delivery/internal/security"
 )
@@ -40,6 +41,14 @@ type Server struct {
 	limitEntries                        map[string]rateEntry
 	lastLimitCleanup                    time.Time
 	rateNow                             func() time.Time
+
+	// Sign-in. MagicLinks.Limiter is the shared window limiter; nil makes the
+	// sign-in start routes fail closed.
+	Accounts               *accounts.Store
+	MagicLinks             accounts.MagicLinkConfig
+	GitHub                 *accounts.GitHubConfig // nil = disabled
+	DashboardToken         string
+	OAuthStartPerIPPerHour int
 }
 type principal struct {
 	KeyID  string
@@ -55,6 +64,8 @@ func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/health/live", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	r.Get("/health/ready", s.ready)
+	// Sign-in routes sit outside the API-key group; the dashboard token guards them.
+	r.Route("/v1/auth", s.authRoutes)
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(s.authenticate)
 		r.Use(s.regionWrites)

@@ -173,11 +173,12 @@ func (g GitHubConfig) Exchange(ctx context.Context, code, verifier string) (GitH
 	return p, nil
 }
 
-// SignInWithGitHub links or creates the user for a GitHub profile and opens a
-// session. Identity first, then verified-email match, then create.
-func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userAgent string) (string, User, error) {
+// SignInWithGitHub links or creates the user for a GitHub profile, opens a
+// session and audits the sign-in in each of the user's active orgs. Identity
+// first, then verified-email match, then create.
+func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userAgent string) (string, Session, User, error) {
 	if p.ID == 0 {
-		return "", User{}, errors.New("accounts: github profile id required")
+		return "", Session{}, User{}, errors.New("accounts: github profile id required")
 	}
 	subject := strconv.FormatInt(p.ID, 10)
 	display := p.Name
@@ -189,7 +190,7 @@ func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userA
 	now := s.now()
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 
@@ -200,31 +201,31 @@ func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userA
 		// rule 1: known identity
 	case errors.Is(err, pgx.ErrNoRows):
 		if p.VerifiedPrimaryEmail == "" {
-			return "", User{}, ErrGitHubEmailUnverified
+			return "", Session{}, User{}, ErrGitHubEmailUnverified
 		}
 		email, nerr := NormaliseEmail(p.VerifiedPrimaryEmail)
 		if nerr != nil {
-			return "", User{}, ErrGitHubEmailUnverified
+			return "", Session{}, User{}, ErrGitHubEmailUnverified
 		}
 		newID, err := id.New()
 		if err != nil {
-			return "", User{}, err
+			return "", Session{}, User{}, err
 		}
 		// Insert verified if absent; the lock below makes concurrent first sign-ins converge.
 		if _, err := tx.Exec(ctx, `INSERT INTO users (id, email, display_name, kind, email_verified_at, created_at) VALUES ($1,$2,$3,'regular',$4,$4)
 			ON CONFLICT (email) DO NOTHING`, newID, email, display, now); err != nil {
-			return "", User{}, err
+			return "", Session{}, User{}, err
 		}
 		var verifiedAt *time.Time
 		err = tx.QueryRow(ctx, `SELECT id, email_verified_at FROM users WHERE email=$1 FOR UPDATE`, email).Scan(&uid, &verifiedAt)
 		if err != nil {
-			return "", User{}, err
+			return "", Session{}, User{}, err
 		}
 		if verifiedAt == nil {
-			return "", User{}, ErrGitHubEmailUnverified // never link or take over an unverified account
+			return "", Session{}, User{}, ErrGitHubEmailUnverified // never link or take over an unverified account
 		}
 	default:
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
 
 	u := User{ID: uid}
@@ -233,10 +234,10 @@ func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userA
 		RETURNING email, display_name, avatar_url, kind, status, email_verified_at IS NOT NULL`,
 		uid, display, nullIfEmpty(p.AvatarURL)).Scan(&u.Email, &dn, &av, &u.Kind, &u.Status, &u.EmailVerified)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", User{}, ErrUserInactive
+		return "", Session{}, User{}, ErrUserInactive
 	}
 	if err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
 	if dn != nil {
 		u.DisplayName = *dn
@@ -245,16 +246,19 @@ func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userA
 		u.AvatarURL = *av
 	}
 	if err := linkIdentity(ctx, tx, uid, "github", subject, now); err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
-	token, _, err := s.CreateSession(ctx, tx, uid, ip, userAgent)
+	token, sess, err := s.CreateSession(ctx, tx, uid, ip, userAgent)
 	if err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
+	}
+	if err := auditSignIn(ctx, tx, uid, "github"); err != nil {
+		return "", Session{}, User{}, err
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return "", User{}, err
+		return "", Session{}, User{}, err
 	}
-	return token, u, nil
+	return token, sess, u, nil
 }
 
 func nullIfEmpty(s string) *string {

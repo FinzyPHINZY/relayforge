@@ -1,18 +1,25 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-	"webhook_delivery/internal/mail"
 
 	"webhook_delivery/internal/accounts"
+	"webhook_delivery/internal/api"
 	"webhook_delivery/internal/id"
+	"webhook_delivery/internal/mail"
 )
 
 func TestSessionLifecycle(t *testing.T) {
@@ -224,7 +231,7 @@ func TestMagicLinkConsume(t *testing.T) {
 	if tok[:4] != "rfm_" {
 		t.Fatal(tok)
 	}
-	sess, u, err := st.ConsumeMagicLink(ctx, tok, "1.1.1.1", "ua")
+	sess, _, u, err := st.ConsumeMagicLink(ctx, tok, "1.1.1.1", "ua")
 	if err != nil || u.Email != "new@example.com" || !u.EmailVerified || u.Kind != "regular" || u.DisplayName != "new" || sess[:4] != "rfs_" {
 		t.Fatalf("consume: %v %+v", err, u)
 	}
@@ -235,23 +242,23 @@ func TestMagicLinkConsume(t *testing.T) {
 	if users != 1 || sessions != 1 || idents != 1 {
 		t.Fatalf("users=%d sessions=%d idents=%d", users, sessions, idents)
 	}
-	if _, _, err := st.ConsumeMagicLink(ctx, tok, "1.1.1.1", "ua"); !errors.Is(err, accounts.ErrLinkInvalid) {
+	if _, _, _, err := st.ConsumeMagicLink(ctx, tok, "1.1.1.1", "ua"); !errors.Is(err, accounts.ErrLinkInvalid) {
 		t.Fatalf("reuse: %v", err)
 	}
-	if _, _, err := st.ConsumeMagicLink(ctx, "rfm_short", "", ""); !errors.Is(err, accounts.ErrLinkInvalid) {
+	if _, _, _, err := st.ConsumeMagicLink(ctx, "rfm_short", "", ""); !errors.Is(err, accounts.ErrLinkInvalid) {
 		t.Fatalf("malformed: %v", err)
 	}
 	// expiry
 	_ = st.RequestMagicLink(ctx, cfg, "new@example.com", "1.1.1.1")
 	exp := tokenOf(1)
 	clock = clock.Add(16 * time.Minute)
-	if _, _, err := st.ConsumeMagicLink(ctx, exp, "", ""); !errors.Is(err, accounts.ErrLinkInvalid) {
+	if _, _, _, err := st.ConsumeMagicLink(ctx, exp, "", ""); !errors.Is(err, accounts.ErrLinkInvalid) {
 		t.Fatalf("expired: %v", err)
 	}
 	// existing user signs in again: same user
 	clock = clock.Add(-16 * time.Minute)
 	_ = st.RequestMagicLink(ctx, cfg, "new@example.com", "1.1.1.1")
-	_, u2, err := st.ConsumeMagicLink(ctx, tokenOf(2), "", "")
+	_, _, u2, err := st.ConsumeMagicLink(ctx, tokenOf(2), "", "")
 	if err != nil || u2.ID != u.ID {
 		t.Fatalf("existing: %v %+v", err, u2)
 	}
@@ -264,7 +271,7 @@ func TestMagicLinkConsume(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, _, err := st.ConsumeMagicLink(ctx, race, "", "")
+			_, _, _, err := st.ConsumeMagicLink(ctx, race, "", "")
 			switch {
 			case err == nil:
 				okCount.Add(1)
@@ -329,12 +336,12 @@ func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
 	if i := strings.IndexAny(link, " \n"); i >= 0 {
 		link = link[:i]
 	}
-	_, mlUser, err := st.ConsumeMagicLink(ctx, link, "1.2.3.4", "ua")
+	_, _, mlUser, err := st.ConsumeMagicLink(ctx, link, "1.2.3.4", "ua")
 	if err != nil {
 		t.Fatal(err)
 	}
 	p := accounts.GitHubProfile{ID: 7, Login: "bo", Name: "Bo", AvatarURL: "https://a/1", VerifiedPrimaryEmail: "Bo@X.io"}
-	tok, u, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
+	tok, _, u, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
 	if err != nil || u.ID != mlUser.ID || tok == "" {
 		t.Fatalf("link: %v %+v", err, u)
 	}
@@ -347,13 +354,13 @@ func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
 
 	// second sign-in: same user, refreshed profile, even without email
 	p.Name, p.VerifiedPrimaryEmail = "", ""
-	_, u2, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
+	_, _, u2, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
 	if err != nil || u2.ID != u.ID || u2.DisplayName != "bo" || identities(u.ID) != 2 {
 		t.Fatalf("second: %v %+v", err, u2)
 	}
 
 	// no verified email on a new identity
-	if _, _, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 8, Login: "z"}, "1.2.3.4", "ua"); !errors.Is(err, accounts.ErrGitHubEmailUnverified) {
+	if _, _, _, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 8, Login: "z"}, "1.2.3.4", "ua"); !errors.Is(err, accounts.ErrGitHubEmailUnverified) {
 		t.Fatalf("empty email: %v", err)
 	}
 
@@ -362,7 +369,7 @@ func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email) VALUES ($1,'un@x.io')`, uid); err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 9, Login: "un", VerifiedPrimaryEmail: "un@x.io"}, "1.2.3.4", "ua"); !errors.Is(err, accounts.ErrGitHubEmailUnverified) {
+	if _, _, _, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 9, Login: "un", VerifiedPrimaryEmail: "un@x.io"}, "1.2.3.4", "ua"); !errors.Is(err, accounts.ErrGitHubEmailUnverified) {
 		t.Fatalf("unverified: %v", err)
 	}
 	var n int
@@ -374,7 +381,7 @@ func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
 	}
 
 	// brand-new GitHub user is created verified
-	_, nu, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 10, Login: "new", VerifiedPrimaryEmail: "new@x.io"}, "1.2.3.4", "ua")
+	_, _, nu, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 10, Login: "new", VerifiedPrimaryEmail: "new@x.io"}, "1.2.3.4", "ua")
 	if err != nil || !nu.EmailVerified || nu.Email != "new@x.io" {
 		t.Fatalf("create: %v %+v", err, nu)
 	}
@@ -387,7 +394,7 @@ func TestGitHubLongProfileFieldsTruncated(t *testing.T) {
 	long := strings.Repeat("é", 200)
 	p := accounts.GitHubProfile{ID: 21, Login: "l", Name: long, AvatarURL: "https://a/" + strings.Repeat("x", 3000), VerifiedPrimaryEmail: "long@x.io"}
 	for i := 0; i < 2; i++ { // create, then refresh
-		_, u, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
+		_, _, u, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
 		if err != nil {
 			t.Fatalf("sign-in %d: %v", i, err)
 		}
@@ -422,7 +429,7 @@ func TestMagicLinkIdentityConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, tok, _ := strings.Cut(mailer.Sent[0].Text, "/auth/email?token=")
-	_, _, err := st.ConsumeMagicLink(ctx, tok[:47], "1.2.3.4", "ua")
+	_, _, _, err := st.ConsumeMagicLink(ctx, tok[:47], "1.2.3.4", "ua")
 	if !errors.Is(err, accounts.ErrIdentityConflict) {
 		t.Fatalf("err %v", err)
 	}
@@ -430,4 +437,289 @@ func TestMagicLinkIdentityConflict(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT count(*) FROM sessions`).Scan(&n); err != nil || n != 0 {
 		t.Fatalf("sessions %d %v", n, err)
 	}
+}
+
+type failingMailer struct{}
+
+func (failingMailer) Send(context.Context, mail.Message) error {
+	return errors.New("smtp refused recipient nobody@example.com")
+}
+
+func TestAuthRoutes(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	limiter := startRedisLimiter(t)
+	const dashToken = "test-dashboard-token-0123456789abcdef"
+	ipKey := bytes.Repeat([]byte{7}, 32)
+	mailer := &mail.LogMailer{}
+	store := &accounts.Store{DB: pool, IPHashKey: ipKey}
+	magic := accounts.MagicLinkConfig{DashboardURL: "https://app.example", Mailer: mailer, Limiter: limiter, PerEmailPerHour: 5, PerIPPerHour: 20}
+	newServer := func(s *api.Server) string {
+		s.DB = pool
+		s.EncryptionKey = bytes.Repeat([]byte{1}, 32)
+		s.EncryptionKeyID = "test"
+		srv := httptest.NewServer(s.Router())
+		t.Cleanup(srv.Close)
+		return srv.URL
+	}
+	base := newServer(&api.Server{Accounts: store, MagicLinks: magic, DashboardToken: dashToken})
+	call := func(t *testing.T, url, method, path, token, ip, body string) (*http.Response, map[string]any) {
+		t.Helper()
+		r, err := http.NewRequest(method, url+path, strings.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if body != "" {
+			r.Header.Set("Content-Type", "application/json")
+		}
+		if token != "" {
+			r.Header.Set("X-RelayForge-Dashboard-Token", token)
+		}
+		if ip != "" {
+			r.Header.Set("X-RelayForge-Client-IP", ip)
+		}
+		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		out := map[string]any{}
+		raw, _ := io.ReadAll(resp.Body)
+		if len(raw) > 0 {
+			if err := json.Unmarshal(raw, &out); err != nil {
+				t.Fatalf("%s %s: bad json %q", method, path, raw)
+			}
+		}
+		return resp, out
+	}
+	expect := func(t *testing.T, resp *http.Response, body map[string]any, status int, code string) {
+		t.Helper()
+		if resp.StatusCode != status || (code != "" && body["code"] != code) {
+			t.Fatalf("status=%d body=%v; want %d %s", resp.StatusCode, body, status, code)
+		}
+	}
+	lastLink := func(t *testing.T, m *mail.LogMailer) string {
+		t.Helper()
+		msgs := m.Messages()
+		if len(msgs) == 0 {
+			t.Fatal("no mail sent")
+		}
+		_, tok, ok := strings.Cut(msgs[len(msgs)-1].Text, "/auth/email?token=")
+		if !ok || len(tok) < 47 {
+			t.Fatalf("no link in %q", msgs[len(msgs)-1].Text)
+		}
+		return tok[:47]
+	}
+	signIn := func(t *testing.T, email string) map[string]any {
+		t.Helper()
+		resp, body := call(t, base, "POST", "/v1/auth/email/start", dashToken, "", `{"email":"`+email+`"}`)
+		expect(t, resp, body, 202, "")
+		resp, body = call(t, base, "POST", "/v1/auth/email/consume", dashToken, "", `{"token":"`+lastLink(t, mailer)+`"}`)
+		expect(t, resp, body, 200, "")
+		return body
+	}
+
+	t.Run("dashboard token required", func(t *testing.T) {
+		for _, tc := range []struct{ method, path, token string }{
+			{"GET", "/v1/auth/providers", ""},
+			{"GET", "/v1/auth/providers", dashToken + "x"},
+			{"POST", "/v1/auth/email/start", ""},
+			{"POST", "/v1/auth/email/consume", ""},
+			{"POST", "/v1/auth/github/start", ""},
+			{"POST", "/v1/auth/github/callback", ""},
+		} {
+			resp, body := call(t, base, tc.method, tc.path, tc.token, "", `{}`)
+			expect(t, resp, body, 401, "dashboard_token_required")
+		}
+	})
+
+	t.Run("providers and disabled github", func(t *testing.T) {
+		resp, body := call(t, base, "GET", "/v1/auth/providers", dashToken, "", "")
+		expect(t, resp, body, 200, "")
+		if body["github"] != false || body["email"] != true || len(body) != 2 {
+			t.Fatalf("providers %v", body)
+		}
+		resp, body = call(t, base, "POST", "/v1/auth/github/start", dashToken, "", "")
+		expect(t, resp, body, 404, "provider_disabled")
+	})
+
+	t.Run("email sign-in, single use and audit", func(t *testing.T) {
+		org, _ := tenantKey(t, pool, "auth-org")
+		other, _ := tenantKey(t, pool, "auth-org-suspended")
+		uid, _ := id.New()
+		if _, err := pool.Exec(ctx, `INSERT INTO users (id, email) VALUES ($1,'member@example.com')`, uid); err != nil {
+			t.Fatal(err)
+		}
+		for _, m := range [][]any{{org, "operator", "active"}, {other, "viewer", "suspended"}} {
+			mid, _ := id.New()
+			if _, err := pool.Exec(ctx, `INSERT INTO team_members (id, organization_id, name, email, role, status, user_id) VALUES ($1,$2,'M','member@example.com',$3,$4,$5)`, mid, m[0], m[1], m[2], uid); err != nil {
+				t.Fatal(err)
+			}
+		}
+		resp, body := call(t, base, "POST", "/v1/auth/email/start", dashToken, "", `{"email":"  Member@Example.com "}`)
+		expect(t, resp, body, 202, "")
+		if len(body) != 0 {
+			t.Fatalf("start body %v", body)
+		}
+		link := lastLink(t, mailer)
+		resp, body = call(t, base, "POST", "/v1/auth/email/consume", dashToken, "", `{"token":"`+link+`"}`)
+		expect(t, resp, body, 200, "")
+		tok, _ := body["session_token"].(string)
+		if !strings.HasPrefix(tok, "rfs_") {
+			t.Fatalf("session token %v", body)
+		}
+		exp, err := time.Parse(time.RFC3339, body["expires_at"].(string))
+		if err != nil || exp.Sub(time.Now()) < 29*24*time.Hour || exp.Sub(time.Now()) > 31*24*time.Hour {
+			t.Fatalf("expires_at %v %v", body["expires_at"], err)
+		}
+		user, _ := body["user"].(map[string]any)
+		if user["id"] != uid || user["email"] != "member@example.com" || len(user) != 3 {
+			t.Fatalf("user %v", user)
+		}
+		if _, u, err := store.LookupSession(ctx, tok); err != nil || u.ID != uid {
+			t.Fatalf("lookup %v %+v", err, u)
+		}
+		var n int
+		var role, target, targetType, method string
+		if err := pool.QueryRow(ctx, `SELECT count(*) OVER (), actor_role, target_id::text, target_type, details->>'method' FROM audit_events
+			WHERE action='user.signed_in' AND actor_user_id=$1 AND organization_id=$2`, uid, org).Scan(&n, &role, &target, &targetType, &method); err != nil {
+			t.Fatal(err)
+		}
+		if n != 1 || role != "operator" || target != uid || targetType != "user" || method != "email" {
+			t.Fatalf("audit n=%d role=%s target=%s type=%s method=%s", n, role, target, targetType, method)
+		}
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE action='user.signed_in' AND organization_id=$1`, other).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("suspended membership audited: %d %v", n, err)
+		}
+
+		resp, body = call(t, base, "POST", "/v1/auth/email/consume", dashToken, "", `{"token":"`+link+`"}`)
+		expect(t, resp, body, 400, "link_invalid")
+		resp, body = call(t, base, "POST", "/v1/auth/email/consume", dashToken, "", `{"token":"rfm_nope"}`)
+		expect(t, resp, body, 400, "link_invalid")
+	})
+
+	t.Run("org-less user writes no audit", func(t *testing.T) {
+		body := signIn(t, "loner@example.com")
+		uid := body["user"].(map[string]any)["id"]
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM audit_events WHERE actor_user_id=$1`, uid).Scan(&n); err != nil || n != 0 {
+			t.Fatalf("audit rows %d %v", n, err)
+		}
+	})
+
+	t.Run("invalid email and json", func(t *testing.T) {
+		resp, body := call(t, base, "POST", "/v1/auth/email/start", dashToken, "", `{"email":"not an email"}`)
+		expect(t, resp, body, 422, "invalid_email")
+		resp, body = call(t, base, "POST", "/v1/auth/email/start", dashToken, "", `{"email":"a@b.co","x":1}`)
+		expect(t, resp, body, 400, "invalid_json")
+	})
+
+	t.Run("per-ip magic link limit", func(t *testing.T) {
+		const ip = "203.0.113.50"
+		for i := 1; i <= 20; i++ {
+			resp, body := call(t, base, "POST", "/v1/auth/email/start", dashToken, ip, fmt.Sprintf(`{"email":"ip%d@example.com"}`, i))
+			expect(t, resp, body, 202, "")
+		}
+		resp, body := call(t, base, "POST", "/v1/auth/email/start", dashToken, ip, `{"email":"ip21@example.com"}`)
+		expect(t, resp, body, 429, "rate_limited")
+		if ra, err := strconv.Atoi(resp.Header.Get("Retry-After")); err != nil || ra <= 0 || ra > 3600 {
+			t.Fatalf("Retry-After %q", resp.Header.Get("Retry-After"))
+		}
+		var n int
+		if err := pool.QueryRow(ctx, `SELECT count(*) FROM magic_links WHERE requested_ip_hash=$1`, store.HashIP(ip)).Scan(&n); err != nil || n != 20 {
+			t.Fatalf("links for ip %d %v", n, err)
+		}
+		// Another client IP is unaffected.
+		resp, body = call(t, base, "POST", "/v1/auth/email/start", dashToken, "203.0.113.51", `{"email":"ip21@example.com"}`)
+		expect(t, resp, body, 202, "")
+	})
+
+	t.Run("mail failure still 202", func(t *testing.T) {
+		m := magic
+		m.Mailer = failingMailer{}
+		u := newServer(&api.Server{Accounts: store, MagicLinks: m, DashboardToken: dashToken})
+		resp, body := call(t, u, "POST", "/v1/auth/email/start", dashToken, "198.51.100.1", `{"email":"fails@example.com"}`)
+		expect(t, resp, body, 202, "")
+	})
+
+	t.Run("disabled and no limiter", func(t *testing.T) {
+		off := newServer(&api.Server{Accounts: &accounts.Store{DB: pool}, MagicLinks: magic, DashboardToken: dashToken})
+		resp, body := call(t, off, "GET", "/v1/auth/providers", dashToken, "", "")
+		expect(t, resp, body, 200, "")
+		if body["github"] != false || body["email"] != false {
+			t.Fatalf("providers %v", body)
+		}
+		for _, p := range []string{"/v1/auth/email/start", "/v1/auth/email/consume", "/v1/auth/github/start", "/v1/auth/github/callback"} {
+			resp, body := call(t, off, "POST", p, dashToken, "", `{}`)
+			expect(t, resp, body, 404, "provider_disabled")
+		}
+		m := magic
+		m.Limiter = nil
+		gh := &accounts.GitHubConfig{ClientID: "cid", ClientSecret: "sec", RedirectURL: "https://app.example/auth/github/callback"}
+		nolim := newServer(&api.Server{Accounts: store, MagicLinks: m, GitHub: gh, DashboardToken: dashToken})
+		resp, body = call(t, nolim, "POST", "/v1/auth/email/start", dashToken, "", `{"email":"nolim@example.com"}`)
+		expect(t, resp, body, 503, "rate_limit_unavailable")
+		resp, body = call(t, nolim, "POST", "/v1/auth/github/start", dashToken, "", "")
+		expect(t, resp, body, 503, "rate_limit_unavailable")
+	})
+
+	t.Run("github", func(t *testing.T) {
+		var ghID atomic.Int64
+		var unverified atomic.Bool
+		ghID.Store(777)
+		mux := http.NewServeMux()
+		mux.HandleFunc("/login/oauth/access_token", func(w http.ResponseWriter, r *http.Request) {
+			_ = r.ParseForm()
+			if r.PostForm.Get("code") != "good" {
+				_, _ = w.Write([]byte(`{"error":"bad_verification_code"}`))
+				return
+			}
+			_, _ = w.Write([]byte(`{"access_token":"tok"}`))
+		})
+		mux.HandleFunc("/user", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = fmt.Fprintf(w, `{"id":%d,"login":"ghuser","name":"GH User"}`, ghID.Load())
+		})
+		mux.HandleFunc("/user/emails", func(w http.ResponseWriter, r *http.Request) {
+			_, _ = fmt.Fprintf(w, `[{"email":"gh%d@example.com","primary":true,"verified":%t}]`, ghID.Load(), !unverified.Load())
+		})
+		fake := httptest.NewServer(mux)
+		t.Cleanup(fake.Close)
+		gh := &accounts.GitHubConfig{ClientID: "cid", ClientSecret: "sec", RedirectURL: "https://app.example/auth/github/callback", AuthBase: fake.URL, APIBase: fake.URL}
+		u := newServer(&api.Server{Accounts: store, MagicLinks: magic, GitHub: gh, DashboardToken: dashToken, OAuthStartPerIPPerHour: 2})
+		resp, body := call(t, u, "GET", "/v1/auth/providers", dashToken, "", "")
+		if body["github"] != true || body["email"] != true {
+			t.Fatalf("providers %v", body)
+		}
+		resp, body = call(t, u, "POST", "/v1/auth/github/start", dashToken, "198.51.100.7", "")
+		expect(t, resp, body, 200, "")
+		authURL, _ := body["authorize_url"].(string)
+		if !strings.HasPrefix(authURL, fake.URL+"/login/oauth/authorize?") || body["state"] == "" || body["verifier"] == "" {
+			t.Fatalf("start %v", body)
+		}
+		resp, body = call(t, u, "POST", "/v1/auth/github/start", dashToken, "198.51.100.7", "")
+		expect(t, resp, body, 200, "")
+		resp, body = call(t, u, "POST", "/v1/auth/github/start", dashToken, "198.51.100.7", "")
+		expect(t, resp, body, 429, "rate_limited")
+		if resp.Header.Get("Retry-After") == "" {
+			t.Fatal("missing Retry-After")
+		}
+
+		resp, body = call(t, u, "POST", "/v1/auth/github/callback", dashToken, "", `{"code":"bad","verifier":"v"}`)
+		expect(t, resp, body, 400, "github_failed")
+		resp, body = call(t, u, "POST", "/v1/auth/github/callback", dashToken, "", `{"code":"","verifier":""}`)
+		expect(t, resp, body, 400, "github_failed")
+		resp, body = call(t, u, "POST", "/v1/auth/github/callback", dashToken, "", `{"code":"good","verifier":"v"}`)
+		expect(t, resp, body, 200, "")
+		if tok, _ := body["session_token"].(string); !strings.HasPrefix(tok, "rfs_") {
+			t.Fatalf("callback %v", body)
+		}
+		if user := body["user"].(map[string]any); user["email"] != "gh777@example.com" || user["display_name"] != "GH User" {
+			t.Fatalf("user %v", user)
+		}
+
+		ghID.Store(778)
+		unverified.Store(true)
+		resp, body = call(t, u, "POST", "/v1/auth/github/callback", dashToken, "", `{"code":"good","verifier":"v"}`)
+		expect(t, resp, body, 403, "github_email_unverified")
+	})
 }
