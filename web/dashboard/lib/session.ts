@@ -8,13 +8,17 @@ const cookieName = "relayforge_session";
 const keyLifetimeSeconds = 8 * 60 * 60;
 const userLifetimeSeconds = 30 * 24 * 60 * 60;
 
-function sessionKey(): Buffer {
+export function sessionKey(): Buffer {
   const raw = process.env.DASHBOARD_SESSION_KEY;
   const key = raw ? Buffer.from(raw, "base64") : Buffer.alloc(0);
   if (key.length !== 32) {
     throw new Error("DASHBOARD_SESSION_KEY must be a base64-encoded 32-byte key");
   }
   return key;
+}
+
+export function secureCookies(): boolean {
+  return process.env.DASHBOARD_SECURE_COOKIES === "true" || (process.env.NODE_ENV === "production" && process.env.DASHBOARD_SECURE_COOKIES !== "false");
 }
 
 async function readSession(): Promise<{ value: SessionValue; expires: number } | null> {
@@ -28,7 +32,7 @@ async function writeSession(value: SessionValue, lifetimeSeconds: number): Promi
   (await cookies()).set(cookieName, sealSession(encodeSessionValue(value), sessionKey(), Date.now(), lifetimeSeconds), {
     httpOnly: true,
     sameSite: "lax",
-    secure: process.env.DASHBOARD_SECURE_COOKIES === "true" || (process.env.NODE_ENV === "production" && process.env.DASHBOARD_SECURE_COOKIES !== "false"),
+    secure: secureCookies(),
     path: "/",
     maxAge: lifetimeSeconds,
   });
