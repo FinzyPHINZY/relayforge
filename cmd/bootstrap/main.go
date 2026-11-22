@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"webhook_delivery/internal/audit"
@@ -26,6 +27,10 @@ func main() {
 	}
 	if *existingOrgID != "" && !id.Valid(*existingOrgID) {
 		log.Fatal("invalid -org-id")
+	}
+	*keyName = strings.TrimSpace(*keyName)
+	if n := utf8.RuneCountInString(*keyName); n < 1 || n > 80 {
+		log.Fatal("-key-name must be 1 to 80 characters")
 	}
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, os.Getenv("DATABASE_URL"))

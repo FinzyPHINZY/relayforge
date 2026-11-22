@@ -148,7 +148,12 @@ func (s *Server) createTeamMember(w http.ResponseWriter, r *http.Request) {
 	// The member role is checked on every request, so a later role change takes
 	// effect immediately without issuing a new credential.
 	scopes := []string{"events:read", "events:write", "endpoints:read", "endpoints:write", "deliveries:read", "deliveries:write", "metrics:read", "team:read", "team:write"}
-	_, err = tx.Exec(ctx, `INSERT INTO api_keys (id,organization_id,member_id,name,key_prefix,key_hash,scopes) VALUES ($1,$2,$3,$4,$5,$6,$7)`, keyID, tenant(r), memberID, in.Name, prefix, security.Hash(raw), scopes)
+	// Member names allow 120 characters; key names stop at 80.
+	keyName := in.Name
+	if runes := []rune(keyName); len(runes) > 80 {
+		keyName = strings.TrimSpace(string(runes[:80]))
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO api_keys (id,organization_id,member_id,name,key_prefix,key_hash,scopes,role) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, keyID, tenant(r), memberID, keyName, prefix, security.Hash(raw), scopes, in.Role)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return

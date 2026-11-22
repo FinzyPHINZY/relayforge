@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log/slog"
 	"net/http"
 	"slices"
 	"strconv"
@@ -113,6 +114,9 @@ func (s *Server) Router() http.Handler {
 			r.With(require("team:write")).Post("/team/members", s.createTeamMember)
 			r.With(require("team:write")).Patch("/team/members/{id}", s.patchTeamMember)
 			r.With(require("team:read")).Get("/audit", s.listAuditEvents)
+			r.With(require("keys:read")).Get("/keys", s.listKeys)
+			r.With(require("keys:write")).Post("/keys", s.createKey)
+			r.With(require("keys:write")).Delete("/keys/{id}", s.revokeKey)
 		})
 	})
 	return otelhttp.NewHandler(r, "http.server")
@@ -180,7 +184,8 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 		var orgID, keyID string
 		var scopes []string
 		var role string
-		err = s.DB.QueryRow(r.Context(), `SELECT k.id,k.key_hash,k.organization_id,k.scopes,COALESCE(m.role,'owner') FROM api_keys k JOIN organizations o ON o.id=k.organization_id LEFT JOIN team_members m ON m.id=k.member_id AND m.organization_id=k.organization_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND o.status='active' AND (m.id IS NULL OR m.status='active')`, prefix).Scan(&keyID, &hash, &orgID, &scopes, &role)
+		var stale bool
+		err = s.DB.QueryRow(r.Context(), `SELECT k.id,k.key_hash,k.organization_id,k.scopes,COALESCE(m.role,k.role,'owner'),(k.last_used_at IS NULL OR k.last_used_at<now()-interval '1 minute') FROM api_keys k JOIN organizations o ON o.id=k.organization_id LEFT JOIN team_members m ON m.id=k.member_id AND m.organization_id=k.organization_id WHERE k.key_prefix=$1 AND k.revoked_at IS NULL AND (k.expires_at IS NULL OR k.expires_at>now()) AND o.status='active' AND (m.id IS NULL OR m.status='active')`, prefix).Scan(&keyID, &hash, &orgID, &scopes, &role, &stale)
 		if errors.Is(err, pgx.ErrNoRows) {
 			problem(w, 401, "unauthorized", "Invalid API key")
 			return
@@ -193,12 +198,27 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			problem(w, 401, "unauthorized", "Invalid API key")
 			return
 		}
+		if stale {
+			s.touchKey(r.Context(), keyID)
+		}
 		set := make(map[string]bool, len(scopes))
 		for _, scope := range scopes {
 			set[scope] = roleAllows(role, scope)
 		}
 		next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, principal{KeyID: keyID, OrgID: orgID, Role: role, Scopes: set})))
 	})
+}
+
+// touchKey records key use at most once a minute. It runs in the background
+// so a slow or failed write never delays or fails the request.
+func (s *Server) touchKey(ctx context.Context, keyID string) {
+	go func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+		defer cancel()
+		if _, err := s.DB.Exec(ctx, `UPDATE api_keys SET last_used_at=now() WHERE id=$1 AND (last_used_at IS NULL OR last_used_at<now()-interval '1 minute')`, keyID); err != nil {
+			slog.DebugContext(ctx, "api key last_used_at update failed", "error", err)
+		}
+	}()
 }
 
 type rateEntry struct {
