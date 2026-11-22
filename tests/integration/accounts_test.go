@@ -863,11 +863,42 @@ func TestSessionOrgHeaderRequiresActiveMembership(t *testing.T) {
 	}
 	env.expect("GET", "/v1/endpoints", tok, org, "", 403, "not_a_member")
 
+	// A stale org header never blocks account routes or /v1/me.
+	for _, stale := range []string{org, foreign} {
+		if a := env.expect("GET", "/v1/account", tok, stale, "", 200, ""); len(a["workspaces"].([]any)) != 0 {
+			t.Fatalf("suspended org listed %v", a)
+		}
+		if m := env.expect("GET", "/v1/me", tok, stale, "", 200, ""); m["role"] != "" || m["user_id"] != uid {
+			t.Fatalf("stale me %v", m)
+		}
+		env.expect("GET", "/v1/account/sessions", tok, stale, "", 200, "")
+	}
+
 	env.expect("GET", "/v1/account", key, "", "", 403, "session_required")
 	env.expect("GET", "/v1/endpoints", key, "", "", 200, "")
+
+	// An API key's org header is ignored: it only ever sees its own org.
+	ep := env.expect("POST", "/v1/endpoints", key, "", `{"url":"https://8.8.8.8/webhooks","event_types":["order.created"]}`, 201, "")
+	epID := ep["endpoint"].(map[string]any)["id"]
+	other, _ := tenantKey(t, pool, "other-with-endpoint")
+	for _, hdr := range []string{org, other} {
+		list := env.expect("GET", "/v1/endpoints", key, hdr, "", 200, "")
+		data, _ := list["data"].([]any)
+		if len(data) != 1 || data[0].(map[string]any)["id"] != epID {
+			t.Fatalf("key with header %s saw %v", hdr, list)
+		}
+	}
+	var otherEndpoints int
+	if err := pool.QueryRow(ctx, `SELECT count(*) FROM endpoints WHERE organization_id IN ($1,$2)`, org, other).Scan(&otherEndpoints); err != nil || otherEndpoints != 0 {
+		t.Fatalf("endpoint created in wrong org: %d %v", otherEndpoints, err)
+	}
 	env.expect("GET", "/v1/account", "rfs_"+strings.Repeat("x", 43), "", "", 401, "unauthorized")
 
 	// accounts not configured: session bearers are rejected
+	// Sign-out still works with a stale header.
+	env.expect("POST", "/v1/account/sign-out", tok, org, "", 204, "")
+	env.expect("GET", "/v1/account", tok, "", "", 401, "unauthorized")
+
 	off := httptest.NewServer((&api.Server{DB: pool, EncryptionKey: bytes.Repeat([]byte{1}, 32), EncryptionKeyID: "test"}).Router())
 	t.Cleanup(off.Close)
 	resp, _ := request(t, "GET", off.URL+"/v1/me", tok, "")

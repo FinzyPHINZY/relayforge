@@ -55,4 +55,10 @@ func TestAccountsSchemaConstraints(t *testing.T) {
 	if _, err := pool.Exec(ctx, `INSERT INTO audit_events (id,organization_id,actor_role,action,target_type,target_id) VALUES ($1,$2,'admin','user.signed_in','user',$3)`, newID(), org, user); pgCode(err) != "23514" {
 		t.Fatalf("no actor: want check violation, got %v", err)
 	}
+	// Review history has exactly one actor: a key or a user.
+	for name, args := range map[string][2]any{"both": {newID(), user}, "neither": {nil, nil}} {
+		if _, err := pool.Exec(ctx, `INSERT INTO delivery_review_history (id,delivery_id,organization_id,api_key_id,actor_user_id,status) VALUES ($1,$2,$3,$4,$5,'investigating')`, newID(), newID(), org, args[0], args[1]); pgCode(err) != "23514" {
+			t.Fatalf("review actor %s: want check violation, got %v", name, err)
+		}
+	}
 }

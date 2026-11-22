@@ -36,8 +36,16 @@ func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, tok
 		return
 	}
 	p := principal{UserID: u.ID, SessionID: sess.ID, Scopes: map[string]bool{}, user: u}
-	if org := r.Header.Get(orgHeader); org != "" {
+	// Account routes are user-scoped and ignore the header; /v1/me reports the
+	// membership when there is one. Neither may fail on a stale header.
+	accountRoute := r.URL.Path == "/v1/account" || strings.HasPrefix(r.URL.Path, "/v1/account/")
+	lenient := r.URL.Path == "/v1/me"
+	if org := r.Header.Get(orgHeader); org != "" && !accountRoute {
 		if !id.Valid(org) {
+			if lenient {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, p)))
+				return
+			}
 			problem(w, 400, "invalid_org", "X-RelayForge-Org must be a workspace id")
 			return
 		}
@@ -45,6 +53,10 @@ func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, tok
 		err := s.DB.QueryRow(r.Context(), `SELECT m.role FROM team_members m JOIN organizations o ON o.id=m.organization_id
 			WHERE m.user_id=$1 AND m.organization_id=$2 AND m.status='active' AND o.status='active'`, u.ID, org).Scan(&role)
 		if errors.Is(err, pgx.ErrNoRows) {
+			if lenient {
+				next.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), principalKey, p)))
+				return
+			}
 			problem(w, 403, "not_a_member", "Not an active member of this workspace")
 			return
 		}

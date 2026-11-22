@@ -194,8 +194,29 @@ func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	var oldRole, oldStatus string
-	err = tx.QueryRow(ctx, `SELECT role,status FROM team_members WHERE id=$1 AND organization_id=$2 FOR UPDATE`, memberID, tenant(r)).Scan(&oldRole, &oldStatus)
+	// Lock the org's active owner rows first (in id order) so concurrent owner
+	// changes serialise and the last-owner check below cannot race.
+	activeOwners := map[string]bool{}
+	ownerRows, err := tx.Query(ctx, `SELECT id FROM team_members WHERE organization_id=$1 AND role='owner' AND status='active' ORDER BY id FOR UPDATE`, tenant(r))
+	if err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	for ownerRows.Next() {
+		var ownerID string
+		if err = ownerRows.Scan(&ownerID); err != nil {
+			break
+		}
+		activeOwners[ownerID] = true
+	}
+	ownerRows.Close()
+	if err != nil || ownerRows.Err() != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	// Scan the stored id: the path id may differ in hex case.
+	var targetID, oldRole, oldStatus string
+	err = tx.QueryRow(ctx, `SELECT id::text,role,status FROM team_members WHERE id=$1 AND organization_id=$2 FOR UPDATE`, memberID, tenant(r)).Scan(&targetID, &oldRole, &oldStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "not_found", "Member not found")
 		return
@@ -204,12 +225,20 @@ func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
+	if oldRole == "owner" && r.Context().Value(principalKey).(principal).Role != "owner" {
+		problem(w, 403, "forbidden", "Only an owner can change an owner")
+		return
+	}
 	role, status := oldRole, oldStatus
 	if in.Role != nil {
 		role = *in.Role
 	}
 	if in.Status != nil {
 		status = *in.Status
+	}
+	if activeOwners[targetID] && (role != "owner" || status != "active") && len(activeOwners) == 1 {
+		problem(w, 409, "last_owner", "A workspace must keep at least one active owner")
+		return
 	}
 	if role != oldRole || status != oldStatus {
 		_, err = tx.Exec(ctx, `UPDATE team_members SET role=$3,status=$4,updated_at=now() WHERE id=$1 AND organization_id=$2`, memberID, tenant(r), role, status)
