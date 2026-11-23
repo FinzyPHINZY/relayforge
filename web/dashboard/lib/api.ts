@@ -5,6 +5,7 @@ import { buildApiUrl } from "@/lib/api-url";
 import { buildAuthHeaders, forwardedUserAgent } from "@/lib/auth-headers";
 import { getSession, type SessionValue } from "@/lib/session";
 import type { Principal } from "@/lib/types";
+import { needsWorkspaceReset, workspaceResetPath } from "@/lib/workspace-reset";
 
 export { clientIpFrom } from "@/lib/client-ip";
 
@@ -94,6 +95,7 @@ export async function readApi<T>(s: SessionValue, path: string): Promise<T> {
     return await apiJson<T>(s, path);
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) redirect("/login?error=expired");
+    if (error instanceof ApiError && needsWorkspaceReset(s.kind, error.status, error.code)) redirect(workspaceResetPath);
     throw error;
   }
 }
@@ -112,6 +114,7 @@ export async function readPrincipal(s: SessionValue): Promise<Principal> {
     return await fetchPrincipal(s);
   } catch (error) {
     if (error instanceof ApiError && error.status === 401) redirect("/login?error=expired");
+    if (error instanceof ApiError && needsWorkspaceReset(s.kind, error.status, error.code)) redirect(workspaceResetPath);
     throw error;
   }
 }

@@ -9,9 +9,12 @@ import type { TeamMember } from "@/lib/types";
 const initial: ControlState = {};
 const selectClass = "h-10 rounded-lg border border-white/15 bg-slate-950/60 px-3 text-sm text-white focus:border-emerald-400 focus:outline-none";
 
+// Owners' roles are shown read-only: the select can't offer "owner", and the
+// action sends only fields that differ from the hidden original values.
 export function MemberAccessForm({ member }: { member: TeamMember }) {
   const [state, action, pending] = useActionState(updateTeamMemberControl, initial);
-  return <form action={action} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={member.id} /><label><span className="sr-only">Role for {member.name}</span><select name="role" defaultValue={member.role} className={selectClass}><option value="admin">Admin</option><option value="operator">Operator</option><option value="viewer">Viewer</option></select></label><label><span className="sr-only">Status for {member.name}</span><select name="status" defaultValue={member.status} className={selectClass}><option value="active">Active</option><option value="suspended">Suspended</option></select></label><Button variant="outline" size="sm" disabled={pending}>{pending ? "Saving…" : "Save"}</Button>{state.error ? <p role="alert" className="w-full text-xs text-rose-300">{state.error}</p> : null}{state.success ? <p role="status" className="w-full text-xs text-emerald-300">{state.success}</p> : null}</form>;
+  const isOwner = member.role === "owner";
+  return <form action={action} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={member.id} /><input type="hidden" name="originalRole" value={member.role} /><input type="hidden" name="originalStatus" value={member.status} />{isOwner ? <span className="px-3 text-sm text-slate-300">Owner</span> : <label><span className="sr-only">Role for {member.name}</span><select name="role" defaultValue={member.role} className={selectClass}><option value="admin">Admin</option><option value="operator">Operator</option><option value="viewer">Viewer</option></select></label>}<label><span className="sr-only">Status for {member.name}</span><select name="status" defaultValue={member.status} className={selectClass}><option value="active">Active</option><option value="suspended">Suspended</option></select></label><Button variant="outline" size="sm" disabled={pending}>{pending ? "Saving…" : "Save"}</Button>{state.error ? <p role="alert" className="w-full text-xs text-rose-300">{state.error}</p> : null}{state.success ? <p role="status" className="w-full text-xs text-emerald-300">{state.success}</p> : null}</form>;
 }
 
 export function CreateMemberForm() {

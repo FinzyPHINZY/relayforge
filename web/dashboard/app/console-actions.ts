@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { apiJson, ApiError, requireOrgSession, requireSession } from "@/lib/api";
 import { parseFieldMap } from "@/lib/field-map";
 import { allScopes, expiryChoices, isRole } from "@/lib/key-form";
+import { diffMemberUpdate } from "@/lib/team-form";
 import { clearSession } from "@/lib/session";
 import { uuidPattern } from "@/lib/session-value";
 import type { AccountSession, ApiKey, Endpoint, Event, TeamMember } from "@/lib/types";
@@ -114,11 +115,12 @@ export async function createTeamMemberControl(_previous: ControlState, form: For
 export async function updateTeamMemberControl(_previous: ControlState, form: FormData): Promise<ControlState> {
   const session = await requireOrgSession();
   const id = String(form.get("id") ?? "");
-  const role = String(form.get("role") ?? "");
-  const status = String(form.get("status") ?? "");
-  if (!uuid.test(id) || !["admin", "operator", "viewer"].includes(role) || !["active", "suspended"].includes(status)) return { error: "Invalid member change." };
+  const field = (name: string) => { const value = form.get(name); return typeof value === "string" ? value : null; };
+  const update = diffMemberUpdate({ role: field("originalRole") ?? "", status: field("originalStatus") ?? "" }, { role: field("role"), status: field("status") });
+  if (!uuid.test(id) || !update) return { error: "Invalid member change." };
+  if (Object.keys(update).length === 0) return { success: "No changes to save." };
   try {
-    await apiJson(session, `/v1/team/members/${id}`, { method: "PATCH", body: JSON.stringify({ role, status }) });
+    await apiJson(session, `/v1/team/members/${id}`, { method: "PATCH", body: JSON.stringify(update) });
     revalidatePath("/team");
     return { success: "Member access updated." };
   } catch (error) { return failure(error); }
