@@ -30,3 +30,33 @@ func TestHashIPStable(t *testing.T) {
 		t.Fatal("empty ip must give nil")
 	}
 }
+
+func TestNormaliseIP(t *testing.T) {
+	cases := map[string]string{
+		"1.2.3.4":                  "1.2.3.4",
+		"::ffff:1.2.3.4":           "1.2.3.4",
+		"2001:db8:1:2:aaaa::1":     "2001:db8:1:2::",
+		"2001:db8:1:2:ffff:ffff::": "2001:db8:1:2::",
+		"fe80::1%eth0":             "fe80::",
+		"":                         "",
+		"not-an-ip":                "not-an-ip",
+	}
+	for in, want := range cases {
+		if got := NormaliseIP(in); got != want {
+			t.Fatalf("NormaliseIP(%q)=%q want %q", in, got, want)
+		}
+	}
+	if NormaliseIP("2001:db8:1:2::1") == NormaliseIP("2001:db8:1:3::1") {
+		t.Fatal("different /64s must not share a subject")
+	}
+	s := &Store{IPHashKey: []byte("k")}
+	if !bytes.Equal(s.HashIP("::ffff:1.2.3.4"), s.HashIP("1.2.3.4")) {
+		t.Fatal("IPv4-mapped address must hash like the IPv4 address")
+	}
+	if !bytes.Equal(s.HashIP("2001:db8:1:2::1"), s.HashIP("2001:db8:1:2:dead:beef::")) {
+		t.Fatal("addresses in one /64 must hash equal")
+	}
+	if bytes.Equal(s.HashIP("2001:db8:1:2::1"), s.HashIP("2001:db8:1:3::1")) {
+		t.Fatal("different /64s must hash differently")
+	}
+}

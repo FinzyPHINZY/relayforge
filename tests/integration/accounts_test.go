@@ -1041,3 +1041,36 @@ func TestSignOutRevokesSession(t *testing.T) {
 	}
 	env.expect("GET", "/v1/account", tokOther, "", "", 200, "")
 }
+
+// TestSessionTouchFailureIsBestEffort makes the last_seen_at UPDATE fail (a
+// trigger rejects it) and checks the lookup still authenticates the session.
+func TestSessionTouchFailureIsBestEffort(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	uid, _ := id.New()
+	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email, status) VALUES ($1,'touch@example.com','active')`, uid); err != nil {
+		t.Fatal(err)
+	}
+	clock := time.Now().UTC().Truncate(time.Second)
+	st := &accounts.Store{DB: pool, IPHashKey: []byte("k"), Now: func() time.Time { return clock }}
+	tx, err := pool.Begin(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, sess, err := st.CreateSession(ctx, tx, uid, "1.2.3.4", "ua")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = tx.Commit(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = pool.Exec(ctx, `CREATE FUNCTION reject_session_touch() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'touch rejected'; END $$;
+		CREATE TRIGGER reject_session_touch BEFORE UPDATE ON sessions FOR EACH ROW EXECUTE FUNCTION reject_session_touch()`); err != nil {
+		t.Fatal(err)
+	}
+	clock = clock.Add(10 * time.Minute) // past the 5-minute touch interval
+	gotS, gotU, err := st.LookupSession(ctx, tok)
+	if err != nil || gotS.ID != sess.ID || gotU.ID != uid {
+		t.Fatalf("lookup with failing touch: %v %+v %+v", err, gotS, gotU)
+	}
+}

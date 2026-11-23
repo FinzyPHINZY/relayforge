@@ -3,6 +3,7 @@ package accounts
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -96,9 +97,11 @@ func (s *Store) LookupSession(ctx context.Context, token string) (Session, User,
 	}
 	u.ID = sess.UserID
 	u.EmailVerified = verified != nil
+	// The touch is best-effort: the session is already proven valid, and a
+	// failed write only delays the idle-timeout extension to the next request.
 	if now.Sub(lastSeen) > touchInterval {
 		if _, err := s.DB.Exec(ctx, `UPDATE sessions SET last_seen_at=$2 WHERE id=$1 AND last_seen_at < $2`, sess.ID, now); err != nil {
-			return Session{}, User{}, err
+			slog.Debug("session last_seen_at touch failed", "session_id", sess.ID, "error", err)
 		}
 	}
 	return sess, u, nil
