@@ -317,3 +317,38 @@ func TestKeyScopesWithinCaller(t *testing.T) {
 	env.expect("POST", "/v1/keys", legacy, "", `{"name":"wide","role":"owner","scopes":["keys:read"]}`, 403, "scope_exceeds_role")
 	env.expect("POST", "/v1/keys", legacy, "", `{"name":"same","role":"owner","scopes":["keys:write"]}`, 201, "")
 }
+
+// TestAccountsRollbackRevokesConsoleRoleKeys rolls back 000021, 000020 and
+// 000019 and checks console keys with a non-owner role are revoked, since the
+// pre-accounts binary resolves keys without a member as owner.
+func TestAccountsRollbackRevokesConsoleRoleKeys(t *testing.T) {
+	pool, _ := setup(t)
+	ctx := context.Background()
+	env, _, ownerTok, org := keyWorkspace(t, pool)
+	viewer := env.expect("POST", "/v1/keys", ownerTok, org, `{"name":"viewer","role":"viewer","scopes":["events:read"]}`, 201, "")
+	owner := env.expect("POST", "/v1/keys", ownerTok, org, `{"name":"owner","role":"owner","scopes":["events:read"]}`, 201, "")
+	legacyID, _ := legacyKey(t, pool, org, []string{"events:read"})
+	for _, name := range []string{"000021_api_key_name_validate", "000020_review_user_actor", "000019_accounts"} {
+		down, err := os.ReadFile("../../db/migrations/" + name + ".down.sql")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err = pool.Exec(ctx, string(down), pgx.QueryExecModeSimpleProtocol); err != nil {
+			t.Fatalf("%s down: %v", name, err)
+		}
+	}
+	revoked := func(keyID string) bool {
+		t.Helper()
+		var r bool
+		if err := pool.QueryRow(ctx, `SELECT revoked_at IS NOT NULL FROM api_keys WHERE id=$1`, keyID).Scan(&r); err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	if !revoked(viewer["id"].(string)) {
+		t.Fatal("console viewer key survived rollback unrevoked; the old binary would treat it as owner")
+	}
+	if revoked(owner["id"].(string)) || revoked(legacyID) {
+		t.Fatal("owner-level keys must stay usable after rollback")
+	}
+}
