@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Code, Pair } from "@/components/docs-code";
+import { DocsOutline } from "@/components/docs-outline";
 import { ArrowLeft, ArrowRight, ArrowUpRight, CircleAlert, KeyRound, Webhook } from "lucide-react";
 import "../landing.css";
 import "../how-it-works/works.css";
@@ -219,19 +221,11 @@ const headerRows = [
   { name: "webhook-attempt", body: "Attempt number, starting at 1. For logging only; do not use it in signature checks." },
 ];
 
-function Code({ label, children }: { label: string; children: string }) {
-  return <figure className="docs-code"><figcaption>{label}</figcaption><pre><code>{children}</code></pre></figure>;
-}
-
-function Pair({ go, ts }: { go: string; ts: string }) {
-  return <div className="docs-pair"><Code label="GO">{go}</Code><Code label="TYPESCRIPT">{ts}</Code></div>;
-}
-
 export default function DocsPage() {
   return <div className="landing workings docs">
     <header className="landing-header"><div className="landing-container landing-header-inner">
       <Link href="/" className="landing-brand" aria-label="RelayForge home"><span className="landing-brand-mark"><Webhook size={21} aria-hidden="true" /></span><span>relayforge<span className="landing-brand-period">.</span></span></Link>
-      <nav className="workings-nav" aria-label="Page navigation"><a href="#install">Install</a><a href="#publish">Publish</a><a href="#retries">Retries</a><a href="#errors">Errors</a><a href="#receive">Receive</a></nav>
+      <nav className="workings-nav" aria-label="Page navigation"><a href="#install">Install</a><a href="#publish">Publish</a><a href="#receive">Receive</a></nav>
       <Link href="/dashboard" className="landing-header-cta">Open console <ArrowUpRight size={16} aria-hidden="true" /></Link>
     </div></header>
 
@@ -243,6 +237,8 @@ export default function DocsPage() {
         <p>RelayForge ships small publisher clients for Go and TypeScript. They send events with a stable idempotency key and retry transient failures for you. This page covers installing them, publishing and scheduling events, handling errors, and verifying the signed webhooks your endpoints receive.</p>
         <div className="docs-callout"><KeyRound size={19} aria-hidden="true" /><p><strong>Before you start:</strong> create an API key with the <code>events:write</code> scope, and register at least one endpoint subscribed to your event type. Keep the key in server code only. Never bundle it into browser JavaScript.</p></div>
       </section>
+
+      <DocsOutline />
 
       <section id="install" className="workings-section docs-section docs-tint" aria-labelledby="install-title"><div className="landing-container">
         <div className="workings-section-heading"><span className="landing-kicker">01 / INSTALL</span><h2 id="install-title">Add a client to your service.</h2><p>The SDKs live in the <a href="https://github.com/FinzyPHINZY/relayforge/tree/main/sdk" target="_blank" rel="noopener noreferrer">repository&apos;s sdk folder</a>. The Go module needs Go 1.22 or newer and uses only the standard library. The TypeScript package has no runtime dependencies. The TypeScript client needs Node.js 20 or newer for global <code>fetch</code> and <code>crypto.randomUUID</code>.</p></div>

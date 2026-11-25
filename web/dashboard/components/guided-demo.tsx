@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { motion, useReducedMotion } from "motion/react";
 import { ArrowRight, Check, Clock3, Database, RotateCcw, ShieldCheck, Webhook, X } from "lucide-react";
 
 const steps = [
@@ -14,6 +15,7 @@ const steps = [
 
 export function GuidedDemo() {
   const [active, setActive] = useState(0);
+  const reduceMotion = useReducedMotion();
   const step = steps[active];
   const Icon = step.icon;
   return <div className="demo-shell">
@@ -22,9 +24,11 @@ export function GuidedDemo() {
       <nav className="demo-timeline" aria-label="Demo steps">{steps.map((item, index) => <button key={item.title} type="button" onClick={() => setActive(index)} aria-current={index === active ? "step" : undefined} className={`demo-timeline-step ${index === active ? "is-active" : ""} ${index < active ? "is-complete" : ""}`}><span className="demo-timeline-number">{index < active ? <Check size={13} aria-hidden="true" /> : String(index + 1).padStart(2, "0")}</span><span><strong>{item.title}</strong><small>{item.phase}</small></span></button>)}</nav>
       <div className="demo-stage" aria-live="polite">
         <div className="demo-stage-meta"><span>STEP {String(active + 1).padStart(2, "0")} / {String(steps.length).padStart(2, "0")}</span><span>{active === 2 ? "RETRYABLE FAILURE" : active === 4 || active === 5 ? "DELIVERED" : "IN PROGRESS"}</span></div>
-        <div className={`demo-stage-icon ${active === 2 ? "is-failed" : active >= 4 ? "is-success" : ""}`}><Icon size={30} strokeWidth={1.6} aria-hidden="true" /></div>
-        <h2>{step.phase}</h2><p>{step.detail}</p>
-        <div className="demo-terminal"><div><span /><span /><span /><small>relayforge / delivery trace</small></div><code><span>$</span> {step.request}</code><code><span>↳</span> {step.response}</code></div>
+        <motion.div key={active} className="demo-stage-content" initial={reduceMotion ? false : { opacity: 0.65, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduceMotion ? 0 : 0.25 }}>
+          <div className={`demo-stage-icon ${active === 2 ? "is-failed" : active >= 4 ? "is-success" : ""}`}><Icon size={30} strokeWidth={1.6} aria-hidden="true" /></div>
+          <h2>{step.phase}</h2><p>{step.detail}</p>
+          <div className="demo-terminal"><div><span /><span /><span /><small>relayforge / delivery trace</small></div><code><span>$</span> {step.request}</code><code><span>↳</span> {step.response}</code></div>
+        </motion.div>
         <div className="demo-stage-footer"><p>{active === 2 || active === 4 ? "The same delivery ID lets receivers deduplicate retries." : "This walkthrough uses example IDs and performs no writes."}</p><div><button type="button" className="demo-reset" onClick={() => setActive(0)}>Restart</button><button type="button" className="demo-next" onClick={() => setActive((current) => Math.min(current + 1, steps.length - 1))} disabled={active === steps.length - 1}>{active === steps.length - 1 ? "Complete" : "Next step"} <ArrowRight size={15} aria-hidden="true" /></button></div></div>
       </div>
     </div>
