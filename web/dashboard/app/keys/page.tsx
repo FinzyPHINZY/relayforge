@@ -25,7 +25,6 @@ function Scopes({ apiKey }: { apiKey: ApiKey }) {
 }
 
 const th = "whitespace-nowrap px-3 py-2.5 text-left text-xs font-semibold uppercase tracking-[0.12em] text-slate-500 first:pl-0 last:pr-0";
-// Below lg each row becomes a labelled card; the label comes from data-label.
 const td = "px-3 py-3 align-top text-sm first:pl-0 last:pr-0 max-lg:grid max-lg:grid-cols-[6.5rem_minmax(0,1fr)] max-lg:gap-3 max-lg:px-0 max-lg:py-1.5 max-lg:before:text-xs max-lg:before:font-medium max-lg:before:text-slate-500 max-lg:before:content-[attr(data-label)]";
 
 export default async function KeysPage() {

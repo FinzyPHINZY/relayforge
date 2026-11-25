@@ -44,7 +44,6 @@ func TestLinkOwnerIdempotent(t *testing.T) {
 		t.Fatalf("audit created=%d updated=%d %v", created, updated, err)
 	}
 
-	// An existing row for the same email (no user yet) is upgraded, not duplicated.
 	mid, _ := id.New()
 	if _, err := pool.Exec(ctx, `INSERT INTO team_members (id, organization_id, name, email, role, status) VALUES ($1,$2,'Pre','pre@example.com','viewer','suspended')`, mid, org); err != nil {
 		t.Fatal(err)
@@ -62,7 +61,6 @@ func TestLinkOwnerIdempotent(t *testing.T) {
 		t.Fatalf("update audit %d %v", n, err)
 	}
 
-	// Errors: unknown org, suspended org, bad email, inactive user.
 	missing, _ := id.New()
 	if _, err := tenant.LinkOwner(ctx, pool, missing, "a@example.com"); err == nil || err.Error() != "organization not found or not active" {
 		t.Fatalf("missing org: %v", err)
@@ -157,7 +155,6 @@ func TestLinkOwnerRefusesOtherMembersRow(t *testing.T) {
 			t.Fatal(err)
 		}
 		mid, _ := id.New()
-		// V's row carries the target email but is linked to V.
 		if _, err := pool.Exec(ctx, `INSERT INTO team_members (id, organization_id, name, email, role, status, user_id) VALUES ($1,$2,'V',$3,$4,'active',$5)`, mid, org, email, role, vid); err != nil {
 			t.Fatal(err)
 		}

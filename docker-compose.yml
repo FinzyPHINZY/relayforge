@@ -43,7 +43,6 @@ services:
       MANAGEMENT_RATE_LIMIT_PER_MINUTE: ${MANAGEMENT_RATE_LIMIT_PER_MINUTE:-120}
       REDIS_URL: redis://redis:6379/0
       DEMO_RECEIVER_ORIGIN: ${DEMO_RECEIVER_ORIGIN:-}
-      # Console sign-in (optional; see .env.example). Local email goes to the API log.
       DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL:-}
       DASHBOARD_API_TOKEN: ${DASHBOARD_API_TOKEN:-}
       IP_HASH_KEY_BASE64: ${IP_HASH_KEY_BASE64:-}

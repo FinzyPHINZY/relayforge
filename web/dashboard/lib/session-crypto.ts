@@ -2,8 +2,8 @@ import { createCipheriv, createDecipheriv, randomBytes } from "node:crypto";
 
 const defaultLifetimeSeconds = 8 * 60 * 60;
 
-// The sealed JSON keeps the original { key, expires } field names so cookies
-// issued before user sessions existed still open (their payload is a plain API key).
+// the sealed JSON keeps the original { key, expires } field names so cookies issued
+// before user sessions existed still open (their payload is a plain API key).
 export function sealSession(value: string, secret: Buffer, now = Date.now(), lifetimeSeconds = defaultLifetimeSeconds): string {
   const iv = randomBytes(12);
   const cipher = createCipheriv("aes-256-gcm", secret, iv);

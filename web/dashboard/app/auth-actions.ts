@@ -15,8 +15,8 @@ async function clientIp(): Promise<string> {
   return clientIpFrom(await headers());
 }
 
-// The response is the same page for every address, so it never reveals
-// whether an address can sign in. Only input and rate errors are surfaced.
+// the response is the same page for every address, so it never reveals whether an
+// address can sign in.
 export async function requestMagicLink(formData: FormData) {
   const email = String(formData.get("email") ?? "").trim();
   if (!email || email.length > 254) redirect("/login?error=invalid_email");
@@ -25,7 +25,7 @@ export async function requestMagicLink(formData: FormData) {
     await authApi("/v1/auth/email/start", { email }, await clientIp());
   } catch (caught) {
     if (caught instanceof ApiError) error = caught;
-    // Never log the address; the class and message are enough to debug.
+    // never log the address; the class and message are enough to debug.
     else console.error("magic link request failed:", caught instanceof Error ? `${caught.name}: ${caught.message}` : typeof caught);
   }
   if (error?.status === 422) redirect("/login?error=invalid_email");

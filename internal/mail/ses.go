@@ -8,7 +8,6 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/sesv2/types"
 )
 
-// SESMailer sends through the SES v2 API. From e.g. "RelayForge <sign-in@relayforge.site>".
 type SESMailer struct {
 	Client *sesv2.Client
 	From   string

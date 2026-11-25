@@ -1,6 +1,6 @@
-// Route handlers get no server-action Origin check, so state-changing ones
-// call this: fetch metadata must say same-origin (or be absent, for older
-// browsers) and any Origin header must be the dashboard's own.
+// route handlers get no server-action Origin check, so state-changing ones call this:
+// fetch metadata must say same-origin (or be absent, for older browsers) and any
+// Origin header must be the dashboard's own.
 export function isSameOriginRequest(headers: Headers, expected: string): boolean {
   const site = headers.get("sec-fetch-site");
   if (site !== null && site !== "same-origin") return false;

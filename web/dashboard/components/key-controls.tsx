@@ -37,8 +37,8 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
   return <Button type="button" variant="outline" size="sm" onClick={copy} aria-live="polite">{copied ? <Check size={14} aria-hidden="true" /> : <Copy size={14} aria-hidden="true" />}{copied ? "Copied" : label}</Button>;
 }
 
-// The fields live in a child keyed by the created key's id, so a successful
-// create remounts them with defaults (role, scopes and the native reset agree).
+// the fields live in a child keyed by the created key's id, so a successful create
+// remounts them with defaults.
 export function CreateKeyForm({ myRole, myScopes }: { myRole: string; myScopes: string[] }) {
   const [state, action, pending] = useActionState(createKeyControl, initial);
   if (!allowedRoles(myRole).length) return <p className="text-sm text-slate-500">Your role can't issue keys in this workspace.</p>;

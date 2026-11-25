@@ -23,8 +23,6 @@ const (
 	maxMemberName               = 120
 )
 
-// authenticateSession resolves an rfs_ bearer. With X-RelayForge-Org it also
-// requires an active membership in an active org and derives scopes from role.
 func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, token string, next http.Handler) {
 	if s.Accounts == nil {
 		problem(w, 401, "unauthorized", "Invalid session")
@@ -36,8 +34,8 @@ func (s *Server) authenticateSession(w http.ResponseWriter, r *http.Request, tok
 		return
 	}
 	p := principal{UserID: u.ID, SessionID: sess.ID, Scopes: map[string]bool{}, user: u}
-	// Account routes are user-scoped and ignore the header; /v1/me reports the
-	// membership when there is one. Neither may fail on a stale header.
+	// account routes are user-scoped and ignore the header; /v1/me reports the
+	// membership when there is one. neither may fail on a stale header.
 	accountRoute := r.URL.Path == "/v1/account" || strings.HasPrefix(r.URL.Path, "/v1/account/")
 	lenient := r.URL.Path == "/v1/me"
 	if org := r.Header.Get(orgHeader); org != "" && !accountRoute {
@@ -128,7 +126,6 @@ func (s *Server) getAccount(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// memberName is the display name, else the email local part, capped at 120 runes.
 func memberName(displayName, email string) string {
 	name := strings.TrimSpace(displayName)
 	if name == "" {
@@ -174,7 +171,7 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	// Locking the user row serialises concurrent creations for the limit check.
+	// locking the user row serialises concurrent creations for the limit check.
 	var email, displayName string
 	if err = tx.QueryRow(ctx, `SELECT COALESCE(email,''),COALESCE(display_name,'') FROM users WHERE id=$1 AND status='active' FOR UPDATE`, p.UserID).Scan(&email, &displayName); err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
@@ -184,8 +181,6 @@ func (s *Server) createWorkspace(w http.ResponseWriter, r *http.Request) {
 		problem(w, 422, "email_required", "An email address is required to create a workspace")
 		return
 	}
-	// organizations.status has no 'deleted' value yet, so this counts every
-	// workspace the user created; the filter keeps it correct once one exists.
 	var count int
 	if err = tx.QueryRow(ctx, `SELECT count(*) FROM organizations WHERE created_by_user_id=$1 AND status<>'deleted'`, p.UserID).Scan(&count); err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")

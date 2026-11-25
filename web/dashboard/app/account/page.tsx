@@ -13,7 +13,7 @@ import type { AccountSession } from "@/lib/types";
 
 export const metadata: Metadata = { title: "Account · RelayForge" };
 
-// Only https avatars are shown; anything else falls back to an initial.
+// only https avatars are shown; anything else falls back to an initial.
 function avatarUrl(value: string | null | undefined): string | null {
   if (!value) return null;
   try { return new URL(value).protocol === "https:" ? value : null; } catch { return null; }

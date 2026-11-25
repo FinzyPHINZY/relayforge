@@ -6,10 +6,8 @@ import { workspaceAfterReset } from "@/lib/workspace-reset";
 
 export const dynamic = "force-dynamic";
 
-// Reached by redirect when an org-scoped call says the active workspace is
-// stale (not_a_member / invalid_org / org_required). The only side effect is
-// re-sealing the caller's own cookie onto a workspace they still belong to,
-// or none, so a cross-site GET can't do more than that.
+// the only side effect is re-sealing the caller's own cookie onto a workspace they
+// still belong to, or none, so a cross-site GET can't do more than that.
 export async function GET() {
   const session = await getSession();
   if (!session) return redirectTo("/login");

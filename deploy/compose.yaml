@@ -47,8 +47,7 @@ services:
       MANAGEMENT_RATE_LIMIT_PER_MINUTE: ${MANAGEMENT_RATE_LIMIT_PER_MINUTE:-120}
       REGION_ROLE: ${REGION_ROLE:-primary}
       OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
-      # Console sign-in (optional; see .env.example). SES uses the EC2 instance
-      # role through IMDSv2, so no AWS access keys belong here.
+      # SES uses the EC2 instance role through IMDSv2, so no AWS access keys belong here.
       DASHBOARD_PUBLIC_URL: ${DASHBOARD_PUBLIC_URL:-}
       DASHBOARD_API_TOKEN: ${DASHBOARD_API_TOKEN:-}
       IP_HASH_KEY_BASE64: ${IP_HASH_KEY_BASE64:-}

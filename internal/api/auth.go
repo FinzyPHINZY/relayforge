@@ -52,7 +52,6 @@ func (s *Server) requireProvider(enabled func() bool) func(http.Handler) http.Ha
 	}
 }
 
-// emailEnabled requires a dashboard URL, IP hash key and dashboard token.
 func (s *Server) emailEnabled() bool {
 	return s.Accounts != nil && len(s.Accounts.IPHashKey) > 0 && s.MagicLinks.DashboardURL != "" && s.MagicLinks.Mailer != nil && s.DashboardToken != ""
 }
@@ -93,8 +92,8 @@ func (s *Server) emailStart(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "rate_limit_unavailable", "Rate limiter unavailable")
 		return
 	case errors.Is(err, accounts.ErrMailSend):
-		// The link is stored; report success so the response reveals nothing.
-		// Never log err text: provider errors can echo the recipient address.
+		// the link is stored; report success so the response reveals nothing.
+		// never log err text: provider errors can echo the recipient address.
 		slog.ErrorContext(r.Context(), "magic link mail send failed", "error_code", errorCode(err))
 	default:
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
@@ -103,7 +102,6 @@ func (s *Server) emailStart(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 202, map[string]any{})
 }
 
-// errorCode returns an AWS/smithy-style API error code when present.
 func errorCode(err error) string {
 	var api interface{ ErrorCode() string }
 	if errors.As(err, &api) {

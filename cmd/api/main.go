@@ -68,6 +68,9 @@ func main() {
 		}
 		mailer = &mail.SESMailer{Client: sesv2.NewFromConfig(awsCfg), From: cfg.MailFrom}
 	}
+	if cfg.SignInMailUndelivered() {
+		slog.Warn("email sign-in is enabled but MAIL_PROVIDER=log: sign-in emails are written to the log, not delivered")
+	}
 	magicLinks := accounts.MagicLinkConfig{DashboardURL: cfg.DashboardPublicURL, Mailer: mailer, PerEmailPerHour: cfg.MagicLinkPerEmailPerHour, PerIPPerHour: cfg.MagicLinkPerIPPerHour}
 	if limiter != nil { // never store a typed nil: a nil limiter makes sign-in fail closed
 		magicLinks.Limiter = limiter

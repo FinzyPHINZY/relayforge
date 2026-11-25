@@ -68,9 +68,8 @@ func (r *Redis) Allow(ctx context.Context, keyID, category string, limit int) (b
 	return allowed == 1, int(retryAfter), nil
 }
 
-// AllowWindow is a fixed-window limiter over a whole number of minutes (1..1440).
-// Keys are relayforge:rate:<category>:<subject>:<window-index>; subject must not
-// be a raw email or IP.
+// AllowWindow keys are relayforge:rate:<category>:<subject>:<window-index>; subject
+// must not be a raw email or IP.
 func (r *Redis) AllowWindow(ctx context.Context, subject, category string, limit int, window time.Duration) (bool, int, error) {
 	switch category {
 	case "magic_link_ip", "magic_link_email", "oauth_ip":

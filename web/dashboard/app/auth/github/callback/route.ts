@@ -12,7 +12,6 @@ type SessionBody = { session_token: string; expires_at: string };
 export async function GET(request: NextRequest) {
   const params = request.nextUrl.searchParams;
   const saved = await takeOAuthCookie();
-  // `error` is set when the user declines on GitHub.
   if (params.has("error") || !saved || !verifyOAuthState(saved.state, params.get("state"))) return redirectTo("/login?error=oauth");
   const code = params.get("code");
   if (!code || code.length > 512) return redirectTo("/login?error=oauth");

@@ -4,7 +4,7 @@ export type OAuthCookie = { state: string; verifier: string };
 
 const maxLength = 512;
 
-// Constant-time state comparison; unequal lengths and empty values never match.
+// constant-time state comparison; unequal lengths and empty values never match.
 export function verifyOAuthState(expected: unknown, actual: unknown): boolean {
   if (typeof expected !== "string" || typeof actual !== "string" || !expected || !actual) return false;
   const a = Buffer.from(expected, "utf8");

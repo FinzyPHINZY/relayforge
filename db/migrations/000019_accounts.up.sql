@@ -53,7 +53,6 @@ ALTER TABLE team_members ADD CONSTRAINT team_members_role_check CHECK (role IN (
 ALTER TABLE organizations ADD COLUMN plan text NOT NULL DEFAULT 'free' CHECK (plan IN ('free'));
 ALTER TABLE organizations ADD COLUMN created_by_user_id uuid REFERENCES users(id);
 
--- api_keys.name and last_used_at already exist (000001); only bound the name for new rows.
 ALTER TABLE api_keys ADD CONSTRAINT api_keys_name_length_check CHECK (length(name) BETWEEN 1 AND 80) NOT VALID;
 ALTER TABLE api_keys ADD COLUMN role text CHECK (role IN ('owner','admin','operator','viewer'));
 ALTER TABLE api_keys ADD COLUMN created_by_user_id uuid REFERENCES users(id);

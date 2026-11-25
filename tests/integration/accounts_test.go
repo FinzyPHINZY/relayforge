@@ -75,13 +75,11 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatalf("last_sign_in_at not set: %v", err)
 	}
 
-	// idle timeout
 	clock = now.Add(7*24*time.Hour + time.Minute)
 	if _, _, err := st.LookupSession(ctx, tok); !errors.Is(err, accounts.ErrSessionInvalid) {
 		t.Fatalf("idle: %v", err)
 	}
 
-	// absolute timeout despite daily activity
 	clock = now
 	tok2, _ := create(u1)
 	for d := 1; d < 30; d++ {
@@ -95,7 +93,6 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatalf("absolute: %v", err)
 	}
 
-	// list, revoke
 	clock = now
 	u1 = newUser("a2@example.com", "active")
 	tok3, s3 := create(u1)
@@ -120,14 +117,12 @@ func TestSessionLifecycle(t *testing.T) {
 		t.Fatalf("revoked listed: %+v", list)
 	}
 
-	// deleting user
 	u3 := newUser("c@example.com", "deleting")
 	tok4, _ := create(u3)
 	if _, _, err := st.LookupSession(ctx, tok4); !errors.Is(err, accounts.ErrSessionInvalid) {
 		t.Fatalf("deleting user: %v", err)
 	}
 
-	// long user agent is truncated, not rejected
 	tx, _ := pool.Begin(ctx)
 	long := string(make([]byte, 0))
 	for i := 0; i < 400; i++ {
@@ -195,7 +190,6 @@ func TestMagicLinkEmailNormalisation(t *testing.T) {
 	if err := st.RequestMagicLink(ctx, cfg, "not an email", "1.2.3.4"); !errors.Is(err, accounts.ErrInvalidEmail) {
 		t.Fatalf("invalid: %v", err)
 	}
-	// per-IP limit is checked first
 	fl := &fakeLimiter{}
 	cfg2 := cfg
 	cfg2.Limiter, cfg2.PerIPPerHour = fl, 1
@@ -224,7 +218,6 @@ func TestMagicLinkConsume(t *testing.T) {
 		}
 		return tok[:47]
 	}
-	// unknown email: nil + mail sent
 	if err := st.RequestMagicLink(ctx, cfg, "new@example.com", "1.1.1.1"); err != nil || len(mailer.Sent) != 1 {
 		t.Fatalf("request: %v sent=%d", err, len(mailer.Sent))
 	}
@@ -249,21 +242,18 @@ func TestMagicLinkConsume(t *testing.T) {
 	if _, _, _, err := st.ConsumeMagicLink(ctx, "rfm_short", "", ""); !errors.Is(err, accounts.ErrLinkInvalid) {
 		t.Fatalf("malformed: %v", err)
 	}
-	// expiry
 	_ = st.RequestMagicLink(ctx, cfg, "new@example.com", "1.1.1.1")
 	exp := tokenOf(1)
 	clock = clock.Add(16 * time.Minute)
 	if _, _, _, err := st.ConsumeMagicLink(ctx, exp, "", ""); !errors.Is(err, accounts.ErrLinkInvalid) {
 		t.Fatalf("expired: %v", err)
 	}
-	// existing user signs in again: same user
 	clock = clock.Add(-16 * time.Minute)
 	_ = st.RequestMagicLink(ctx, cfg, "new@example.com", "1.1.1.1")
 	_, _, u2, err := st.ConsumeMagicLink(ctx, tokenOf(2), "", "")
 	if err != nil || u2.ID != u.ID {
 		t.Fatalf("existing: %v %+v", err, u2)
 	}
-	// concurrent consumes
 	_ = st.RequestMagicLink(ctx, cfg, "race@example.com", "1.1.1.1")
 	race := tokenOf(3)
 	var wg sync.WaitGroup
@@ -327,7 +317,6 @@ func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
 		return n
 	}
 
-	// magic-link user, then GitHub with the same verified primary email
 	mailer := &mail.LogMailer{}
 	cfg := accounts.MagicLinkConfig{DashboardURL: "https://app.example", Mailer: mailer, Limiter: &fakeLimiter{}, PerEmailPerHour: 5, PerIPPerHour: 100}
 	if err := st.RequestMagicLink(ctx, cfg, "bo@x.io", "1.2.3.4"); err != nil {
@@ -353,19 +342,16 @@ func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
 		t.Fatalf("profile not refreshed: %+v", u)
 	}
 
-	// second sign-in: same user, refreshed profile, even without email
 	p.Name, p.VerifiedPrimaryEmail = "", ""
 	_, _, u2, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
 	if err != nil || u2.ID != u.ID || u2.DisplayName != "bo" || identities(u.ID) != 2 {
 		t.Fatalf("second: %v %+v", err, u2)
 	}
 
-	// no verified email on a new identity
 	if _, _, _, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 8, Login: "z"}, "1.2.3.4", "ua"); !errors.Is(err, accounts.ErrGitHubEmailUnverified) {
 		t.Fatalf("empty email: %v", err)
 	}
 
-	// unverified existing user is neither linked nor duplicated
 	uid, _ := id.New()
 	if _, err := pool.Exec(ctx, `INSERT INTO users (id, email) VALUES ($1,'un@x.io')`, uid); err != nil {
 		t.Fatal(err)
@@ -381,7 +367,6 @@ func TestGitHubLinksByVerifiedEmailOnly(t *testing.T) {
 		t.Fatal("unverified user got linked")
 	}
 
-	// brand-new GitHub user is created verified
 	_, _, nu, err := st.SignInWithGitHub(ctx, accounts.GitHubProfile{ID: 10, Login: "new", VerifiedPrimaryEmail: "new@x.io"}, "1.2.3.4", "ua")
 	if err != nil || !nu.EmailVerified || nu.Email != "new@x.io" {
 		t.Fatalf("create: %v %+v", err, nu)
@@ -394,7 +379,7 @@ func TestGitHubLongProfileFieldsTruncated(t *testing.T) {
 	st := &accounts.Store{DB: pool, IPHashKey: []byte("k")}
 	long := strings.Repeat("é", 200)
 	p := accounts.GitHubProfile{ID: 21, Login: "l", Name: long, AvatarURL: "https://a/" + strings.Repeat("x", 3000), VerifiedPrimaryEmail: "long@x.io"}
-	for i := 0; i < 2; i++ { // create, then refresh
+	for i := 0; i < 2; i++ {
 		_, _, u, err := st.SignInWithGitHub(ctx, p, "1.2.3.4", "ua")
 		if err != nil {
 			t.Fatalf("sign-in %d: %v", i, err)
@@ -630,7 +615,6 @@ func TestAuthRoutes(t *testing.T) {
 		if err := pool.QueryRow(ctx, `SELECT count(*) FROM magic_links WHERE requested_ip_hash=$1`, store.HashIP(ip)).Scan(&n); err != nil || n != 20 {
 			t.Fatalf("links for ip %d %v", n, err)
 		}
-		// Another client IP is unaffected.
 		resp, body = call(t, base, "POST", "/v1/auth/email/start", dashToken, "203.0.113.51", `{"email":"ip21@example.com"}`)
 		expect(t, resp, body, 202, "")
 	})
@@ -725,8 +709,6 @@ func TestAuthRoutes(t *testing.T) {
 	})
 }
 
-// consoleEnv is an API server with accounts configured, plus helpers to create
-// session users and call the API with an org header.
 type consoleEnv struct {
 	t     *testing.T
 	url   string
@@ -745,7 +727,6 @@ func newConsoleEnv(t *testing.T, pool *pgxpool.Pool, s *api.Server) *consoleEnv 
 	return &consoleEnv{t: t, url: srv.URL, store: store}
 }
 
-// sessionUser inserts a user and returns its id and a live session token.
 func (e *consoleEnv) sessionUser(email, displayName string) (string, string) {
 	e.t.Helper()
 	ctx := context.Background()
@@ -863,7 +844,6 @@ func TestSessionOrgHeaderRequiresActiveMembership(t *testing.T) {
 	}
 	env.expect("GET", "/v1/endpoints", tok, org, "", 403, "not_a_member")
 
-	// A stale org header never blocks account routes or /v1/me.
 	for _, stale := range []string{org, foreign} {
 		if a := env.expect("GET", "/v1/account", tok, stale, "", 200, ""); len(a["workspaces"].([]any)) != 0 {
 			t.Fatalf("suspended org listed %v", a)
@@ -877,7 +857,6 @@ func TestSessionOrgHeaderRequiresActiveMembership(t *testing.T) {
 	env.expect("GET", "/v1/account", key, "", "", 403, "session_required")
 	env.expect("GET", "/v1/endpoints", key, "", "", 200, "")
 
-	// An API key's org header is ignored: it only ever sees its own org.
 	ep := env.expect("POST", "/v1/endpoints", key, "", `{"url":"https://8.8.8.8/webhooks","event_types":["order.created"]}`, 201, "")
 	epID := ep["endpoint"].(map[string]any)["id"]
 	other, _ := tenantKey(t, pool, "other-with-endpoint")
@@ -894,8 +873,6 @@ func TestSessionOrgHeaderRequiresActiveMembership(t *testing.T) {
 	}
 	env.expect("GET", "/v1/account", "rfs_"+strings.Repeat("x", 43), "", "", 401, "unauthorized")
 
-	// accounts not configured: session bearers are rejected
-	// Sign-out still works with a stale header.
 	env.expect("POST", "/v1/account/sign-out", tok, org, "", 204, "")
 	env.expect("GET", "/v1/account", tok, "", "", 401, "unauthorized")
 
@@ -948,7 +925,6 @@ func TestCreateWorkspaceLimit(t *testing.T) {
 		t.Fatalf("orgs %d %v", n, err)
 	}
 
-	// concurrent creations never exceed the limit
 	uid2, tok2 := env.sessionUser("race@example.com", "Racer")
 	var wg sync.WaitGroup
 	var created atomic.Int32
@@ -973,7 +949,6 @@ func TestCreateWorkspaceLimit(t *testing.T) {
 		t.Fatalf("display name member %q %v", memberName, err)
 	}
 
-	// configured limit
 	env2 := newConsoleEnv(t, pool, &api.Server{MaxWorkspacesPerUser: 1})
 	_, tok3 := env2.sessionUser("one@example.com", "")
 	env2.expect("POST", "/v1/account/workspaces", tok3, "", `{"name":"only"}`, 201, "")
@@ -988,7 +963,6 @@ func TestSignOutRevokesSession(t *testing.T) {
 	_, tokOther := env.sessionUser("other@example.com", "")
 	ws := env.expect("POST", "/v1/account/workspaces", tok, "", `{"name":"w"}`, 201, "")
 
-	// a second session for the same user
 	tx, _ := pool.Begin(ctx)
 	tok2, sess2, err := env.store.CreateSession(ctx, tx, uid, "", "second-agent")
 	if err != nil {
@@ -1020,7 +994,6 @@ func TestSignOutRevokesSession(t *testing.T) {
 		t.Fatalf("current count %d", currents)
 	}
 
-	// another user's session id is not found; unknown and malformed ids too
 	env.expect("DELETE", "/v1/account/sessions/"+sess2.ID, tokOther, "", "", 404, "not_found")
 	unknown, _ := id.New()
 	env.expect("DELETE", "/v1/account/sessions/"+unknown, tok, "", "", 404, "not_found")
@@ -1042,8 +1015,6 @@ func TestSignOutRevokesSession(t *testing.T) {
 	env.expect("GET", "/v1/account", tokOther, "", "", 200, "")
 }
 
-// TestSessionTouchFailureIsBestEffort makes the last_seen_at UPDATE fail (a
-// trigger rejects it) and checks the lookup still authenticates the session.
 func TestSessionTouchFailureIsBestEffort(t *testing.T) {
 	pool, _ := setup(t)
 	ctx := context.Background()
@@ -1068,7 +1039,7 @@ func TestSessionTouchFailureIsBestEffort(t *testing.T) {
 		CREATE TRIGGER reject_session_touch BEFORE UPDATE ON sessions FOR EACH ROW EXECUTE FUNCTION reject_session_touch()`); err != nil {
 		t.Fatal(err)
 	}
-	clock = clock.Add(10 * time.Minute) // past the 5-minute touch interval
+	clock = clock.Add(10 * time.Minute)
 	gotS, gotU, err := st.LookupSession(ctx, tok)
 	if err != nil || gotS.ID != sess.ID || gotU.ID != uid {
 		t.Fatalf("lookup with failing touch: %v %+v %+v", err, gotS, gotU)

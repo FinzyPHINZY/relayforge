@@ -42,21 +42,16 @@ type Server struct {
 	limitEntries                        map[string]rateEntry
 	lastLimitCleanup                    time.Time
 	rateNow                             func() time.Time
-	keyTouches                          sync.Map // key id -> time.Time of the last last_used_at write
+	keyTouches                          sync.Map
 
-	// Sign-in. MagicLinks.Limiter is the shared window limiter; nil makes the
-	// sign-in start routes fail closed.
 	Accounts               *accounts.Store
 	MagicLinks             accounts.MagicLinkConfig
-	GitHub                 *accounts.GitHubConfig // nil = disabled
+	GitHub                 *accounts.GitHubConfig
 	DashboardToken         string
 	OAuthStartPerIPPerHour int
-	MaxWorkspacesPerUser   int // 0 = default (3)
+	MaxWorkspacesPerUser   int
 }
 
-// principal is the authenticated caller. API keys set KeyID and always carry
-// an OrgID; console sessions set UserID and SessionID, and carry an OrgID only
-// when X-RelayForge-Org names an active membership.
 type principal struct {
 	KeyID     string
 	UserID    string
@@ -64,10 +59,9 @@ type principal struct {
 	OrgID     string
 	Role      string
 	Scopes    map[string]bool
-	user      accounts.User // session principals only
+	user      accounts.User
 }
 
-// allScopes lists every API scope; session principals get each one their role allows.
 var allScopes = []string{
 	"events:read", "events:write", "endpoints:read", "endpoints:write",
 	"deliveries:read", "deliveries:write", "metrics:read",
@@ -82,7 +76,6 @@ func (s *Server) Router() http.Handler {
 	r := chi.NewRouter()
 	r.Get("/health/live", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	r.Get("/health/ready", s.ready)
-	// Sign-in routes sit outside the API-key group; the dashboard token guards them.
 	r.Route("/v1/auth", s.authRoutes)
 	r.Route("/v1", func(r chi.Router) {
 		r.Use(s.authenticate)
@@ -90,7 +83,6 @@ func (s *Server) Router() http.Handler {
 		r.Use(s.rateLimit)
 		r.Get("/me", s.currentPrincipal)
 		r.Route("/account", s.accountRoutes)
-		// Every tenant(r) caller lives in this group, so OrgID is never empty there.
 		r.Group(func(r chi.Router) {
 			r.Use(requireOrg)
 			r.With(require("events:write")).Post("/events", s.createEvent)
@@ -210,8 +202,6 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 	})
 }
 
-// claimKeyTouch reports whether this process should record a use of keyID
-// at now: at most once a minute per key, so bursts start one write, not N.
 func (s *Server) claimKeyTouch(keyID string, now time.Time) bool {
 	prev, loaded := s.keyTouches.LoadOrStore(keyID, now)
 	if !loaded {
@@ -223,8 +213,7 @@ func (s *Server) claimKeyTouch(keyID string, now time.Time) bool {
 	return s.keyTouches.CompareAndSwap(keyID, prev, now)
 }
 
-// touchKey records key use at most once a minute. It runs in the background
-// so a slow or failed write never delays or fails the request.
+// touchKey runs in the background so a slow or failed write never delays or fails the request.
 func (s *Server) touchKey(ctx context.Context, keyID string) {
 	if !s.claimKeyTouch(keyID, time.Now()) {
 		return
@@ -330,7 +319,6 @@ func require(scope string) func(http.Handler) http.Handler {
 	}
 }
 
-// requireOrg rejects principals without an organization (org-less sessions).
 func requireOrg(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Context().Value(principalKey).(principal).OrgID == "" {

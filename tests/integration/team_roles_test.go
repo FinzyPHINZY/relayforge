@@ -132,7 +132,6 @@ func TestTeamOwnerGuards(t *testing.T) {
 	if err := pool.QueryRow(ctx, `SELECT id FROM team_members WHERE organization_id=$1 AND user_id=$2`, org, uid).Scan(&ownerRow); err != nil {
 		t.Fatal(err)
 	}
-	// Bootstrap key: no member row, so it resolves as owner.
 	keyID, _ := id.New()
 	boot, _ := security.NewToken("whk_")
 	prefix, _ := security.KeyPrefix(boot)
@@ -148,7 +147,6 @@ func TestTeamOwnerGuards(t *testing.T) {
 	for _, body := range []string{`{"role":"viewer"}`, `{"status":"suspended"}`} {
 		env.expect("PATCH", path, adminKey, "", body, 403, "forbidden")
 	}
-	// The admin can still manage non-owner rows (itself here).
 	env.expect("PATCH", "/v1/team/members/"+admin["id"].(string), adminKey, "", `{"role":"operator"}`, 200, "")
 
 	env.expect("PATCH", "/v1/team/members/"+strings.ToUpper(ownerRow), boot, "", `{"role":"admin"}`, 409, "last_owner")
@@ -161,7 +159,6 @@ func TestTeamOwnerGuards(t *testing.T) {
 		t.Fatalf("owner row changed: %s %s %v", role, status, err)
 	}
 
-	// A second active owner lets the bootstrap key demote the first.
 	uid2, _ := env.sessionUser("owner2@example.com", "")
 	second, _ := id.New()
 	if _, err := pool.Exec(ctx, `INSERT INTO team_members (id,organization_id,name,email,role,user_id) VALUES ($1,$2,'Owner2','owner2@example.com','owner',$3)`, second, org, uid2); err != nil {

@@ -11,8 +11,6 @@ export default async function TeamPage() {
   const session = await requireOrgSession();
   const me = await readPrincipal(session);
   const members = me.scopes.includes("team:read") ? await readApi<{ data: TeamMember[] }>(session, "/v1/team/members") : { data: [] };
-  // Mirrors the API: team writes and the audit log need owner or admin plus
-  // the scope; only an owner may change another owner (team.go).
   const manager = me.role === "owner" || me.role === "admin";
   const canManage = manager && me.scopes.includes("team:write");
   const canAudit = manager && me.scopes.includes("team:read");

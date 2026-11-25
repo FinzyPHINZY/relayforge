@@ -43,7 +43,7 @@ func (s *Server) listAuditEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var rows pgx.Rows
-	// User actors are labelled by display name, else email local part; never the full email.
+	// user actors are labelled by display name, else email local part; never the full email.
 	const columns = `a.id,a.actor_api_key_id,a.actor_user_id,COALESCE(k.name,CASE
 		WHEN a.actor_user_id IS NOT NULL THEN COALESCE(NULLIF(u.display_name,''),NULLIF(split_part(u.email,'@',1),''),'Deleted user')
 		WHEN a.actor_api_key_id IS NULL THEN 'System' ELSE 'Deleted key' END),a.actor_role,a.action,a.target_type,a.target_id,a.details,a.created_at

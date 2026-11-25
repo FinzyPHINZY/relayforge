@@ -44,7 +44,6 @@ func truncateUA(ua string) string {
 	return string([]rune(ua)[:maxUserAgent])
 }
 
-// CreateSession inserts a session inside tx and records the user's sign-in time.
 func (s *Store) CreateSession(ctx context.Context, tx pgx.Tx, userID, ip, userAgent string) (string, Session, error) {
 	token, err := security.NewToken(sessionPrefix)
 	if err != nil {
@@ -71,7 +70,6 @@ func (s *Store) CreateSession(ctx context.Context, tx pgx.Tx, userID, ip, userAg
 	return token, sess, nil
 }
 
-// LookupSession resolves a token to its session and user, or ErrSessionInvalid.
 func (s *Store) LookupSession(ctx context.Context, token string) (Session, User, error) {
 	if !strings.HasPrefix(token, sessionPrefix) || len(token) != sessionTokenLen {
 		return Session{}, User{}, ErrSessionInvalid
@@ -97,8 +95,8 @@ func (s *Store) LookupSession(ctx context.Context, token string) (Session, User,
 	}
 	u.ID = sess.UserID
 	u.EmailVerified = verified != nil
-	// The touch is best-effort: the session is already proven valid, and a
-	// failed write only delays the idle-timeout extension to the next request.
+	// the touch is best-effort: the session is already proven valid, and a failed write
+	// only delays the idle-timeout extension to the next request.
 	if now.Sub(lastSeen) > touchInterval {
 		if _, err := s.DB.Exec(ctx, `UPDATE sessions SET last_seen_at=$2 WHERE id=$1 AND last_seen_at < $2`, sess.ID, now); err != nil {
 			slog.Debug("session last_seen_at touch failed", "session_id", sess.ID, "error", err)
@@ -107,9 +105,6 @@ func (s *Store) LookupSession(ctx context.Context, token string) (Session, User,
 	return sess, u, nil
 }
 
-// RevokeSession revokes one of the user's own live sessions and writes
-// session.revoked into each active membership org, in one transaction.
-// ErrNotFound for an unknown, malformed, revoked or other user's session.
 func (s *Store) RevokeSession(ctx context.Context, userID, sessionID string) error {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -132,7 +127,6 @@ func (s *Store) RevokeSession(ctx context.Context, userID, sessionID string) err
 	return tx.Commit(ctx)
 }
 
-// ListSessions returns the user's live sessions, newest first.
 func (s *Store) ListSessions(ctx context.Context, userID string) ([]SessionInfo, error) {
 	now := s.now()
 	rows, err := s.DB.Query(ctx, `SELECT id, created_at, last_seen_at, expires_at, COALESCE(user_agent,'')
@@ -153,8 +147,6 @@ func (s *Store) ListSessions(ctx context.Context, userID string) ([]SessionInfo,
 	return out, rows.Err()
 }
 
-// SignOut revokes the user's session and writes user.signed_out into every
-// active membership org, in one transaction. ErrNotFound if already revoked.
 func (s *Store) SignOut(ctx context.Context, userID, sessionID string) error {
 	tx, err := s.DB.Begin(ctx)
 	if err != nil {
@@ -174,13 +166,10 @@ func (s *Store) SignOut(ctx context.Context, userID, sessionID string) error {
 	return tx.Commit(ctx)
 }
 
-// auditSignIn writes user.signed_in, inside the sign-in tx, into every active
-// org where the user is an active member, using that membership's role.
 func auditSignIn(ctx context.Context, tx pgx.Tx, userID, method string) error {
 	return auditUserEvent(ctx, tx, userID, "user.signed_in", "user", userID, map[string]any{"method": method})
 }
 
-// auditUserEvent writes an audit row acted by userID into each active membership org.
 func auditUserEvent(ctx context.Context, tx pgx.Tx, userID, action, targetType, targetID string, details map[string]any) error {
 	rows, err := tx.Query(ctx, `SELECT m.organization_id, m.role FROM team_members m JOIN organizations o ON o.id = m.organization_id
 		WHERE m.user_id=$1 AND m.status='active' AND o.status='active' ORDER BY m.organization_id`, userID)

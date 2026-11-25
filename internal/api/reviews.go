@@ -72,7 +72,6 @@ func (s *Server) reviewDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "internal_error", "ID generation failed")
 		return
 	}
-	// Keys record api_key_id; console sessions record actor_user_id instead.
 	p := r.Context().Value(principalKey).(principal)
 	var keyID, userID any
 	if p.KeyID != "" {

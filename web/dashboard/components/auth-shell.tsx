@@ -3,7 +3,6 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import "@/app/login/login.css";
 
-// The two-panel frame shared by the login, email-link and welcome pages.
 export function AuthShell({ children, labelledBy, back = { href: "/", label: "Back to RelayForge" }, footer }: { children: ReactNode; labelledBy: string; back?: { href: string; label: string }; footer?: ReactNode }) {
   return <main className="console-theme login-page">
     <div className="login-frame">

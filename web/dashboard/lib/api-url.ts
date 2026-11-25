@@ -1,6 +1,6 @@
-// Builds an API URL from a caller-supplied path and refuses anything that could
-// resolve outside `prefix` on the configured origin: dot segments, percent
-// encoding or backslashes in the path part, control characters and fragments.
+// refuses anything that could resolve outside `prefix` on the configured origin: dot
+// segments, percent encoding or backslashes in the path part, control characters and
+// fragments.
 export function buildApiUrl(path: string, origin: string, prefix: "/v1/" | "/v1/auth/"): URL {
   const queryAt = path.indexOf("?");
   const rawPath = queryAt === -1 ? path : path.slice(0, queryAt);

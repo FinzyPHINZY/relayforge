@@ -9,8 +9,6 @@ import { getSession } from "@/lib/session";
 
 type ShellContext = { scopes: string[]; user: { workspaces: Workspace[]; currentId: string | null } | null };
 
-// The sidebar is best effort: if the API can't be reached the page itself
-// reports the failure, so the shell falls back to the base navigation.
 async function loadShellContext(): Promise<ShellContext> {
   const session = await getSession();
   if (!session) return { scopes: [], user: null };

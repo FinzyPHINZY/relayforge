@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/base64"
 	"errors"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -15,7 +16,6 @@ type Config struct {
 	DemoReceiverOrigin                                 string
 	RegionRole                                         string
 
-	// Accounts (optional; wired in cmd/api later).
 	DashboardPublicURL, MailFrom, MailProvider, AWSRegion string
 	MailLogBodies                                         bool
 	IPHashKey                                             []byte
@@ -62,6 +62,9 @@ func Load() (Config, error) {
 		return c, errors.New("DEMO_RECEIVER_ORIGIN must be http://receiver:8090 or empty")
 	}
 	c.DashboardPublicURL = strings.TrimRight(os.Getenv("DASHBOARD_PUBLIC_URL"), "/")
+	if c.DashboardPublicURL != "" && !validOrigin(c.DashboardPublicURL) {
+		return c, errors.New("DASHBOARD_PUBLIC_URL must be an http(s) origin with no path, query or fragment")
+	}
 	c.MailFrom = os.Getenv("MAIL_FROM")
 	c.MailProvider = os.Getenv("MAIL_PROVIDER")
 	if c.MailProvider == "" {
@@ -73,6 +76,10 @@ func Load() (Config, error) {
 		if err != nil {
 			return c, errors.New("MAIL_LOG_BODIES must be a boolean")
 		}
+	}
+	// logged bodies hold live sign-in links; only a local dashboard may use them.
+	if c.MailLogBodies && c.DashboardPublicURL != "" && !localOrigin(c.DashboardPublicURL) {
+		return c, errors.New("MAIL_LOG_BODIES may only be true when DASHBOARD_PUBLIC_URL is localhost or 127.0.0.1")
 	}
 	switch c.MailProvider {
 	case "log":
@@ -122,6 +129,33 @@ func Load() (Config, error) {
 		return c, errors.New("GITHUB_CLIENT_ID and GITHUB_CLIENT_SECRET must be set together")
 	}
 	return c, nil
+}
+
+func (c Config) EmailSignInEnabled() bool {
+	return c.DashboardPublicURL != "" && len(c.IPHashKey) == 32 && c.DashboardAPIToken != ""
+}
+
+func (c Config) SignInMailUndelivered() bool {
+	if !c.EmailSignInEnabled() || c.MailProvider != "log" {
+		return false
+	}
+	u, err := url.Parse(c.DashboardPublicURL)
+	return err == nil && u.Scheme == "https" && !localOrigin(c.DashboardPublicURL)
+}
+
+func validOrigin(raw string) bool {
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Host != "" && u.Hostname() != "" &&
+		u.User == nil && u.Path == "" && u.RawQuery == "" && !u.ForceQuery && u.Fragment == "" && !strings.Contains(raw, "#") && u.Opaque == ""
+}
+
+func localOrigin(raw string) bool {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return false
+	}
+	host := u.Hostname()
+	return host == "localhost" || host == "127.0.0.1"
 }
 
 func positiveEnv(name string, fallback int) (int, error) {

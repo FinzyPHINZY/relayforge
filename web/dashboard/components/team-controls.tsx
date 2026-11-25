@@ -9,8 +9,6 @@ import type { TeamMember } from "@/lib/types";
 const initial: ControlState = {};
 const selectClass = "h-10 rounded-lg border border-white/15 bg-slate-950/60 px-3 text-sm text-white focus:border-emerald-400 focus:outline-none";
 
-// Owners' roles are shown read-only: the select can't offer "owner", and the
-// action sends only fields that differ from the hidden original values.
 export function MemberAccessForm({ member }: { member: TeamMember }) {
   const [state, action, pending] = useActionState(updateTeamMemberControl, initial);
   const isOwner = member.role === "owner";

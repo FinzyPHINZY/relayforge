@@ -18,8 +18,8 @@ function authorizeUrl(raw: unknown): URL | null {
   }
 }
 
-// POST only, from the login page's form. There is deliberately no GET, so a
-// link or prefetch can't start a flow, and cross-site posts are refused.
+// POST only; there is deliberately no GET, so a link or prefetch can't start a flow,
+// and cross-site posts are refused.
 export async function POST(request: NextRequest) {
   if (!isSameOriginRequest(request.headers, expectedOrigin(process.env.DASHBOARD_PUBLIC_URL, request.url))) return redirectTo("/login?error=oauth", 303);
   let body: Start;

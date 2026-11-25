@@ -1,6 +1,3 @@
-// Mirrors the Go key policy (internal/api/team.go roleAllows, api.go allScopes).
-// The API enforces it; the dashboard only uses it to avoid offering choices
-// that would be refused.
 
 export type Role = "owner" | "admin" | "operator" | "viewer";
 
@@ -34,18 +31,15 @@ function roleAllows(role: string, scope: string): boolean {
   }
 }
 
-/** Roles a caller with myRole may give a new key, highest first. */
 export function allowedRoles(myRole: string): Role[] {
   if (!isRole(myRole)) return [];
   return allRoles.filter((role) => rank[role] <= rank[myRole]);
 }
 
-/** Scopes a key with this role may hold, in canonical order. */
 export function allowedScopes(role: string): string[] {
   return allScopes.filter((scope) => roleAllows(role, scope));
 }
 
-/** Scopes the form offers: the role policy, capped to the caller's own scopes. */
 export function offeredScopes(role: string, myScopes: readonly string[]): string[] {
   const mine = new Set(myScopes);
   return allowedScopes(role).filter((scope) => mine.has(scope));

@@ -12,10 +12,8 @@ import (
 	"webhook_delivery/internal/id"
 )
 
-// LinkOwner makes the person who controls email an active owner of an existing
-// organization, creating the user when needed. The operator asserts ownership
-// of the address, so the user is marked verified, but a magic link must still be
-// clicked to sign in. It is idempotent and returns the user ID.
+// LinkOwner marks the user verified because the operator asserts ownership of the
+// address; a magic link must still be clicked to sign in.
 func LinkOwner(ctx context.Context, pool *pgxpool.Pool, orgID, rawEmail string) (string, error) {
 	if !id.Valid(orgID) {
 		return "", errors.New("invalid organization ID")
@@ -30,7 +28,7 @@ func LinkOwner(ctx context.Context, pool *pgxpool.Pool, orgID, rawEmail string) 
 	}
 	defer tx.Rollback(ctx)
 
-	// Locking the organization serialises concurrent link runs.
+	// locking the organization serialises concurrent link runs.
 	var orgStatus string
 	if err = tx.QueryRow(ctx, `SELECT status FROM organizations WHERE id=$1 FOR UPDATE`, orgID).Scan(&orgStatus); err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return "", err
@@ -65,7 +63,6 @@ func LinkOwner(ctx context.Context, pool *pgxpool.Pool, orgID, rawEmail string) 
 		return "", err
 	}
 
-	// Prefer the row already linked to this user; otherwise adopt the row for this email.
 	var memberID, role, status string
 	var memberUser *string
 	err = tx.QueryRow(ctx, `SELECT id::text, role, status, user_id::text FROM team_members
@@ -85,7 +82,6 @@ func LinkOwner(ctx context.Context, pool *pgxpool.Pool, orgID, rawEmail string) 
 	case memberUser != nil && *memberUser != userID:
 		return "", errors.New("email already belongs to a different member of this workspace")
 	case role == "owner" && status == "active" && memberUser != nil:
-		// Already linked: nothing to change or audit.
 	default:
 		if _, err = tx.Exec(ctx, `UPDATE team_members SET role='owner',status='active',user_id=$2 WHERE id=$1`, memberID, userID); err != nil {
 			return "", err

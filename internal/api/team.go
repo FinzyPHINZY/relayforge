@@ -59,7 +59,6 @@ func (s *Server) listTeamMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"data": members})
 }
 
-// requireRole writes a 403 and returns false unless the principal's role is in allowed.
 func requireRole(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
 	role := r.Context().Value(principalKey).(principal).Role
 	for _, a := range allowed {
@@ -148,7 +147,6 @@ func (s *Server) createTeamMember(w http.ResponseWriter, r *http.Request) {
 	// The member role is checked on every request, so a later role change takes
 	// effect immediately without issuing a new credential.
 	scopes := []string{"events:read", "events:write", "endpoints:read", "endpoints:write", "deliveries:read", "deliveries:write", "metrics:read", "team:read", "team:write"}
-	// Member names allow 120 characters; key names stop at 80.
 	keyName := in.Name
 	if runes := []rune(keyName); len(runes) > 80 {
 		keyName = strings.TrimSpace(string(runes[:80]))
@@ -199,7 +197,7 @@ func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	// Lock the org's active owner rows first (in id order) so concurrent owner
+	// lock the org's active owner rows first (in id order) so concurrent owner
 	// changes serialise and the last-owner check below cannot race.
 	activeOwners := map[string]bool{}
 	ownerRows, err := tx.Query(ctx, `SELECT id FROM team_members WHERE organization_id=$1 AND role='owner' AND status='active' ORDER BY id FOR UPDATE`, tenant(r))
@@ -219,7 +217,7 @@ func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
-	// Scan the stored id: the path id may differ in hex case.
+	// scan the stored id: the path id may differ in hex case.
 	var targetID, oldRole, oldStatus string
 	err = tx.QueryRow(ctx, `SELECT id::text,role,status FROM team_members WHERE id=$1 AND organization_id=$2 FOR UPDATE`, memberID, tenant(r)).Scan(&targetID, &oldRole, &oldStatus)
 	if errors.Is(err, pgx.ErrNoRows) {

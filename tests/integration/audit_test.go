@@ -65,7 +65,7 @@ func TestAuditTrailIsTenantScopedRedactedAndAtomic(t *testing.T) {
 	if resp.StatusCode != 403 {
 		t.Fatalf("viewer audit status=%d", resp.StatusCode)
 	}
-	// Role changes go straight to SQL so the audit event counts asserted below stay stable.
+	// role changes go straight to SQL so the audit event counts asserted below stay stable.
 	for role, want := range map[string]int{"operator": 403, "admin": 200} {
 		if _, err := pool.Exec(context.Background(), `UPDATE team_members SET role=$2 WHERE id=$1`, member.ID, role); err != nil {
 			t.Fatal(err)
@@ -163,8 +163,6 @@ func TestAuditTrailIsTenantScopedRedactedAndAtomic(t *testing.T) {
 		t.Fatalf("failed patch audit count=%d err=%v", count, err)
 	}
 
-	// User actors: actor_user_id is returned and the label is the display name,
-	// else the email local part, never the full email.
 	env := newConsoleEnv(t, pool, &api.Server{})
 	ownerID, ownerTok := env.sessionUser("ada.owner@example.com", "Ada Owner")
 	ws := env.expect(http.MethodPost, "/v1/account/workspaces", ownerTok, "", `{"name":"audited"}`, 201, "")

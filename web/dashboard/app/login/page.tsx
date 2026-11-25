@@ -21,7 +21,6 @@ const messages: Record<string, string> = {
   invalid_email: "Enter a valid email address.",
 };
 
-// A failed providers fetch (API down, token unset) leaves API-key sign-in only.
 async function loadProviders(): Promise<Providers> {
   try {
     const providers = await authGet<Partial<Providers>>("/v1/auth/providers", clientIpFrom(await headers()));

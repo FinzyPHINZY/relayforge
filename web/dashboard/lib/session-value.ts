@@ -9,7 +9,6 @@ export function encodeSessionValue(v: SessionValue): string {
 }
 
 export function decodeSessionValue(raw: string): SessionValue | null {
-  // Cookies sealed before user sessions existed hold the bare API key.
   if (raw.startsWith("whk_")) return keyToken.test(raw) ? { kind: "key", token: raw } : null;
   let parsed: unknown;
   try { parsed = JSON.parse(raw); } catch { return null; }

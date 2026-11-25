@@ -11,7 +11,6 @@ const targetPath: Partial<Record<AuditEvent["target_type"], string>> = { endpoin
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ cursor?: string }> }) {
   const session = await requireOrgSession();
   const me = await readPrincipal(session);
-  // The API serves the audit log to owners and admins holding team:read.
   if ((me.role !== "owner" && me.role !== "admin") || !me.scopes.includes("team:read")) notFound();
   const { cursor } = await searchParams;
   const params = new URLSearchParams({ limit: "50" });

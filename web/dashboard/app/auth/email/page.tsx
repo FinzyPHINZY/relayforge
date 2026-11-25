@@ -6,11 +6,11 @@ import { AuthShell } from "@/components/auth-shell";
 import { Button } from "@/components/ui/button";
 import { magicLinkToken } from "@/lib/magic-link";
 
-// The token sits in the URL, so no outgoing request may carry it as a Referer.
+// the token sits in the URL, so no outgoing request may carry it as a Referer.
 export const metadata: Metadata = { title: "Sign in · RelayForge", referrer: "no-referrer", robots: { index: false, follow: false } };
 
-// GET only renders a button: mail-client link scanners that fetch the URL must
-// not consume the single-use link. Only the POST below does.
+// GET only renders a button: mail-client link scanners that fetch the URL must not
+// consume the single-use link. only the POST below does.
 export default async function EmailLinkPage({ searchParams }: { searchParams: Promise<{ token?: string | string[] }> }) {
   const { token } = await searchParams;
   const valid = typeof token === "string" && magicLinkToken.test(token);

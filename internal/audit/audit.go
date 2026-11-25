@@ -12,7 +12,7 @@ import (
 type Entry struct {
 	OrganizationID string
 	ActorKeyID     string // Empty only for trusted system actions.
-	ActorUserID    string // Set when a signed-in user acts; empty for key or system actors.
+	ActorUserID    string
 	ActorRole      string
 	Action         string
 	TargetType     string

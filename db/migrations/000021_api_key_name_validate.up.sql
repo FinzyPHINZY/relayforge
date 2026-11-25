@@ -1,6 +1,6 @@
--- Rows written before 000019 may break api_keys_name_length_check, and
--- PostgreSQL re-checks a NOT VALID constraint on every UPDATE of such a row,
--- so revoking them would fail. Normalise those names, then validate.
+-- rows written before 000019 may break api_keys_name_length_check, and postgresql
+-- re-checks a NOT VALID constraint on every UPDATE of such a row, so revoking them
+-- would fail. normalise those names, then validate.
 UPDATE api_keys SET name = CASE
     WHEN btrim(name, E' \t\r\n') = '' THEN 'Legacy key'
     ELSE btrim(left(btrim(name, E' \t\r\n'), 80), E' \t\r\n')

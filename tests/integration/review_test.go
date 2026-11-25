@@ -81,7 +81,6 @@ func TestExhaustedDeliveryReviewIsAuditedAndTenantScoped(t *testing.T) {
 	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE target_id=$1 AND action='delivery.reviewed'`, claim.ID).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("general review audit count=%d err=%v", count, err)
 	}
-	// A console session (owner) can review; history records the user, not a key.
 	env := newConsoleEnv(t, pool, &api.Server{})
 	uid, sessTok := env.sessionUser("reviewer@example.com", "Reviewer")
 	memberID, _ := id.New()

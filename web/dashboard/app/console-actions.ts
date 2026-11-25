@@ -167,7 +167,7 @@ export async function revokeKeyControl(_previous: ControlState, form: FormData):
   }
 }
 
-// Account calls never carry an org header: they belong to the person, not a workspace.
+// account calls never carry an org header: they belong to the person, not a workspace.
 async function requireUserToken(): Promise<string> {
   const session = await requireSession();
   if (session.kind !== "user") redirect("/dashboard");
@@ -188,8 +188,8 @@ export async function revokeSessionControl(_previous: ControlState, form: FormDa
   return { success: "Session signed out." };
 }
 
-// Revokes every other session first, then this one, so a failure part-way
-// leaves the user signed in here and able to retry.
+// revokes every other session first, then this one, so a failure part-way leaves the
+// user signed in here and able to retry.
 export async function signOutEverywhereControl(_previous: ControlState): Promise<ControlState> {
   const token = await requireUserToken();
   const session = { kind: "user", token, org: null } as const;

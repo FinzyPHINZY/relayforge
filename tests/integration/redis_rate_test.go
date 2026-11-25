@@ -101,7 +101,6 @@ func TestDistributedRateLimitAndRedisOutage(t *testing.T) {
 	}
 }
 
-// startRedisLimiter starts a throwaway Redis container and returns a limiter on it.
 func startRedisLimiter(t testing.TB) *ratelimit.Redis {
 	t.Helper()
 	ctx := context.Background()

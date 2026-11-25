@@ -1,20 +1,12 @@
-# Caddy v2 ignores any client-supplied X-Forwarded-For (no trusted_proxies is
-# configured) and sets it to the connecting client IP, which the dashboard uses
-# as the client address for sign-in rate limits. Do not add trusted_proxies
-# unless another proxy sits in front of Caddy. This behaviour needs Caddy
-# 2.5 or newer; the Compose files pin caddy:2.10-alpine.
+# caddy ignores any client-supplied X-Forwarded-For (no trusted_proxies is configured)
+# and sets it to the connecting client IP, which the dashboard uses for sign-in rate
+# limits. this needs caddy 2.5 or newer (the compose files pin caddy:2.10-alpine); do not
+# add trusted_proxies unless another proxy sits in front of caddy.
 #
-# X-RelayForge-* headers are set only by the dashboard server on its internal
-# calls to http://api:8080; strip any client-supplied copies at the edge.
-# Access logging is not enabled. If you add a `log` directive, also filter the
-# `token` query parameter so emailed sign-in links are not recorded, e.g.
-#   log {
-#       format filter {
-#           request>uri query {
-#               replace token REDACTED
-#           }
-#       }
-#   }
+# X-RelayForge-* headers are set only by the dashboard server on its internal calls;
+# strip any client-supplied copies at the edge.
+# access logging is not enabled; if you add it, filter the `token` query parameter so
+# emailed sign-in links are not recorded.
 
 {$RELAYFORGE_DASHBOARD_DOMAIN} {
     encode zstd gzip

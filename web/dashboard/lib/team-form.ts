@@ -1,5 +1,4 @@
-// Builds the PATCH /v1/team/members/{id} body from the team form. Only fields
-// that changed are sent, and an owner's role is never sent: the form can't
+// only changed fields are sent, and an owner's role is never sent: the form can't
 // offer "owner", so sending its select value would silently demote owners.
 
 const editableRoles = ["admin", "operator", "viewer"] as const;
@@ -11,7 +10,6 @@ export type MemberUpdate = { role?: (typeof editableRoles)[number]; status?: (ty
 type Original = { role: string; status: string };
 type Submitted = { role: string | null; status: string | null };
 
-/** The fields to send, {} when nothing changed, or null for an invalid form. */
 export function diffMemberUpdate(original: Original, submitted: Submitted): MemberUpdate | null {
   if (!knownRoles.includes(original.role) || !(statuses as readonly string[]).includes(original.status)) return null;
   const update: MemberUpdate = {};

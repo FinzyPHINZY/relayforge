@@ -46,9 +46,8 @@ export async function saveSession(v: SessionValue): Promise<void> {
   await writeSession(v, v.kind === "user" ? userLifetimeSeconds : keyLifetimeSeconds);
 }
 
-// Switching organisation re-seals the cookie with the remaining lifetime, so the
+// switching organisation re-seals the cookie with the remaining lifetime, so the
 // session never outlives its original expiry.
-// null clears the active workspace (the user has none left).
 export async function setActiveOrg(org: string | null): Promise<void> {
   if (org !== null && !uuidPattern.test(org)) throw new Error("Invalid organisation id");
   const session = await readSession();

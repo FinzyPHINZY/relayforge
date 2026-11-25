@@ -1,4 +1,3 @@
-// Package accounts holds user accounts and server-side sessions.
 package accounts
 
 import (
@@ -37,7 +36,6 @@ func (s *Store) now() time.Time {
 	return time.Now().UTC()
 }
 
-// NormaliseEmail trims, lowercases and requires a bare address (no display name).
 func NormaliseEmail(raw string) (string, error) {
 	e := strings.ToLower(strings.TrimSpace(raw))
 	if e == "" || len(e) > 254 {
@@ -50,10 +48,8 @@ func NormaliseEmail(raw string) (string, error) {
 	return e, nil
 }
 
-// NormaliseIP turns a client address into a rate-limit / hash subject:
-// IPv4-mapped IPv6 becomes IPv4, and IPv6 is bucketed to its /64 (one
-// customer network) so rotating through a prefix doesn't escape a limit.
-// Unparseable input (including "") is returned unchanged.
+// NormaliseIP buckets IPv6 to its /64 so rotating through a prefix doesn't escape a
+// rate limit; IPv4-mapped IPv6 becomes IPv4.
 func NormaliseIP(ip string) string {
 	addr, err := netip.ParseAddr(ip)
 	if err != nil {
@@ -66,7 +62,6 @@ func NormaliseIP(ip string) string {
 	return netip.PrefixFrom(addr, 64).Masked().Addr().String()
 }
 
-// HashIP returns HMAC-SHA256(IPHashKey, NormaliseIP(ip)), or nil for an empty IP.
 func (s *Store) HashIP(ip string) []byte {
 	if ip == "" {
 		return nil

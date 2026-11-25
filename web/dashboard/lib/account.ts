@@ -8,17 +8,13 @@ export type Account = { user: { id: string; email?: string | null; display_name?
 
 const sessionToken = /^rfs_[A-Za-z0-9_-]{1,508}$/;
 
-// The account call never sends an org header: a stale active org (the user was
-// removed from it) must not stop the user from listing or switching workspaces.
-// Memoised per render so the shell and the page share one call; outside a
-// render (server actions) cache() simply calls through.
+// the account call never sends an org header: a stale active org (the user was removed
+// from it) must not stop the user from listing or switching workspaces.
 export const fetchAccount = cache(async (token: string): Promise<Account> => {
   const account = await apiJson<Account>({ kind: "user", token, org: null }, "/v1/account");
   return { ...account, workspaces: (account.workspaces ?? []).filter((w) => uuidPattern.test(w.id)) };
 });
 
-// Saves a fresh user session and returns where the browser should land next.
-// Throws ApiError when the account can't be read; nothing is saved then.
 export async function completeSignIn(token: string): Promise<"/dashboard" | "/welcome"> {
   if (!sessionToken.test(token)) throw new Error("Invalid session token");
   const { workspaces } = await fetchAccount(token);

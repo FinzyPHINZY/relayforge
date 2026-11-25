@@ -22,15 +22,12 @@ const (
 )
 
 var (
-	ErrInvalidEmail = errors.New("invalid email")
-	ErrLinkInvalid  = errors.New("magic link invalid")
-	// ErrMailSend wraps a mailer failure after the link was stored; use errors.Is.
-	ErrMailSend = errors.New("magic link mail send failed")
-	// ErrLimiterUnavailable wraps a rate limiter failure; use errors.Is.
+	ErrInvalidEmail       = errors.New("invalid email")
+	ErrLinkInvalid        = errors.New("magic link invalid")
+	ErrMailSend           = errors.New("magic link mail send failed")
 	ErrLimiterUnavailable = errors.New("rate limiter unavailable")
 )
 
-// ErrRateLimited reports a limited request; use errors.As.
 type ErrRateLimited struct{ RetryAfter int }
 
 func (e ErrRateLimited) Error() string {
@@ -49,8 +46,6 @@ type MagicLinkConfig struct {
 	PerIPPerHour    int
 }
 
-// RequestMagicLink rate limits, stores a single-use link and mails it. It
-// returns nil whether or not a user exists for the address.
 func (s *Store) RequestMagicLink(ctx context.Context, cfg MagicLinkConfig, rawEmail, ip string) error {
 	email, err := NormaliseEmail(rawEmail)
 	if err != nil {
@@ -59,7 +54,7 @@ func (s *Store) RequestMagicLink(ctx context.Context, cfg MagicLinkConfig, rawEm
 	if len(s.IPHashKey) == 0 {
 		return errors.New("accounts: IPHashKey is required for magic-link requests")
 	}
-	// Fail closed: requests with no IP share one bucket rather than skipping the limit.
+	// fail closed: requests with no IP share one bucket rather than skipping the limit.
 	ipSubject := ip
 	if ipSubject == "" {
 		ipSubject = "unknown"
@@ -101,8 +96,6 @@ func (s *Store) RequestMagicLink(ctx context.Context, cfg MagicLinkConfig, rawEm
 	return nil
 }
 
-// ConsumeMagicLink atomically spends the link, finds or creates the user,
-// opens a session and audits the sign-in in each of the user's active orgs.
 func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent string) (string, Session, User, error) {
 	if !strings.HasPrefix(token, magicLinkPrefix) || len(token) != magicLinkLen {
 		return "", Session{}, User{}, ErrLinkInvalid
@@ -127,7 +120,7 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent strin
 		return "", Session{}, User{}, err
 	}
 	local, _, _ := strings.Cut(email, "@")
-	// Insert-if-absent, then lock the row so concurrent first sign-ins converge on one user.
+	// insert-if-absent, then lock the row so concurrent first sign-ins converge on one user.
 	if _, err := tx.Exec(ctx, `INSERT INTO users (id, email, display_name, kind, created_at) VALUES ($1,$2,$3,'regular',$4)
 		ON CONFLICT (email) DO NOTHING`, uid, email, local, now); err != nil {
 		return "", Session{}, User{}, err
@@ -137,7 +130,7 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent strin
 	err = tx.QueryRow(ctx, `UPDATE users SET email_verified_at = COALESCE(email_verified_at, $2) WHERE email=$1 AND status='active'
 		RETURNING id, display_name, avatar_url, kind, status`, email, now).Scan(&u.ID, &display, &avatar, &u.Kind, &u.Status)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", Session{}, User{}, ErrLinkInvalid // user is deleting or deleted
+		return "", Session{}, User{}, ErrLinkInvalid
 	}
 	if err != nil {
 		return "", Session{}, User{}, err
@@ -165,11 +158,8 @@ func (s *Store) ConsumeMagicLink(ctx context.Context, token, ip, userAgent strin
 	return sessionToken, sess, u, nil
 }
 
-// ErrIdentityConflict reports an external identity already bound to another user.
 var ErrIdentityConflict = errors.New("identity belongs to a different user")
 
-// linkIdentity binds (provider, subject) to userID. It is idempotent for the
-// same user and fails with ErrIdentityConflict if another user owns it.
 func linkIdentity(ctx context.Context, tx pgx.Tx, userID, provider, subject string, now time.Time) error {
 	iid, err := id.New()
 	if err != nil {

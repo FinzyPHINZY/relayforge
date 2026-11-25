@@ -21,15 +21,13 @@ import (
 
 const maxGitHubBody = 1 << 20
 
-// ErrGitHubEmailUnverified: no verified primary email, or the address belongs to an unverified account.
 var ErrGitHubEmailUnverified = errors.New("github_email_unverified")
 
-// ErrUserInactive reports a user that is deleting or deleted.
 var ErrUserInactive = errors.New("user is not active")
 
 type GitHubConfig struct {
 	ClientID, ClientSecret, RedirectURL string
-	AuthBase, APIBase                   string // default https://github.com and https://api.github.com
+	AuthBase, APIBase                   string
 	HTTP                                *http.Client
 }
 
@@ -69,7 +67,6 @@ func randomB64(n int) (string, error) {
 	return base64.RawURLEncoding.EncodeToString(b), nil
 }
 
-// Start builds the authorize URL with a fresh state and PKCE S256 challenge.
 func (g GitHubConfig) Start() (OAuthStart, error) {
 	state, err := randomB64(32)
 	if err != nil {
@@ -106,8 +103,6 @@ func (g GitHubConfig) doJSON(req *http.Request, out any) error {
 	return json.Unmarshal(body, out)
 }
 
-// Exchange trades the code for a token and loads the profile. The token is
-// never logged or returned.
 func (g GitHubConfig) Exchange(ctx context.Context, code, verifier string) (GitHubProfile, error) {
 	form := url.Values{}
 	form.Set("client_id", g.ClientID)
@@ -173,9 +168,6 @@ func (g GitHubConfig) Exchange(ctx context.Context, code, verifier string) (GitH
 	return p, nil
 }
 
-// SignInWithGitHub links or creates the user for a GitHub profile, opens a
-// session and audits the sign-in in each of the user's active orgs. Identity
-// first, then verified-email match, then create.
 func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userAgent string) (string, Session, User, error) {
 	if p.ID == 0 {
 		return "", Session{}, User{}, errors.New("accounts: github profile id required")
@@ -198,7 +190,6 @@ func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userA
 	err = tx.QueryRow(ctx, `SELECT user_id FROM user_identities WHERE provider='github' AND provider_subject=$1`, subject).Scan(&uid)
 	switch {
 	case err == nil:
-		// rule 1: known identity
 	case errors.Is(err, pgx.ErrNoRows):
 		if p.VerifiedPrimaryEmail == "" {
 			return "", Session{}, User{}, ErrGitHubEmailUnverified
@@ -211,7 +202,7 @@ func (s *Store) SignInWithGitHub(ctx context.Context, p GitHubProfile, ip, userA
 		if err != nil {
 			return "", Session{}, User{}, err
 		}
-		// Insert verified if absent; the lock below makes concurrent first sign-ins converge.
+		// insert verified if absent; the lock below makes concurrent first sign-ins converge.
 		if _, err := tx.Exec(ctx, `INSERT INTO users (id, email, display_name, kind, email_verified_at, created_at) VALUES ($1,$2,$3,'regular',$4,$4)
 			ON CONFLICT (email) DO NOTHING`, newID, email, display, now); err != nil {
 			return "", Session{}, User{}, err

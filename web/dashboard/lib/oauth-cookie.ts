@@ -17,7 +17,7 @@ export async function saveOAuthCookie(value: OAuthCookie): Promise<void> {
   });
 }
 
-// Reads and always deletes the cookie, so each OAuth state is usable once.
+// reads and always deletes the cookie, so each oauth state is usable once.
 export async function takeOAuthCookie(): Promise<OAuthCookie | null> {
   const jar = await cookies();
   const raw = jar.get(cookieName)?.value;

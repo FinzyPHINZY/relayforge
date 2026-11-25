@@ -67,12 +67,10 @@ async function browserUserAgent(): Promise<string | null> {
   try {
     return forwardedUserAgent((await requestHeaders()).get("user-agent"));
   } catch {
-    return null; // outside a request scope
+    return null;
   }
 }
 
-// Every /v1/auth call carries the dashboard token and the end user's IP (R19),
-// and the browser's User-Agent so new sessions record the real device (R36).
 async function authRequest(path: string, clientIp: string): Promise<{ url: URL; headers: Headers }> {
   const url = buildApiUrl(path, apiOrigin(), "/v1/auth/");
   const token = process.env.DASHBOARD_API_TOKEN;
@@ -100,8 +98,8 @@ export async function readApi<T>(s: SessionValue, path: string): Promise<T> {
   }
 }
 
-// One /v1/me call per render: the shell and the page share it. cache() keys on
-// arguments by identity, so it takes primitives rather than the session object.
+// cache() keys on arguments by identity, so it takes primitives rather than the
+// session object.
 const principalFor = cache((kind: "key" | "user", token: string, org: string | null): Promise<Principal> =>
   apiJson<Principal>(kind === "key" ? { kind, token } : { kind, token, org }, "/v1/me"));
 

@@ -14,8 +14,6 @@ import (
 	"webhook_delivery/internal/security"
 )
 
-// keyWorkspace creates an owner session with a workspace and returns the env,
-// owner user id, owner token and org id.
 func keyWorkspace(t *testing.T, pool *pgxpool.Pool) (*consoleEnv, string, string, string) {
 	t.Helper()
 	env := newConsoleEnv(t, pool, &api.Server{})
@@ -24,7 +22,6 @@ func keyWorkspace(t *testing.T, pool *pgxpool.Pool) (*consoleEnv, string, string
 	return env, uid, tok, ws["id"].(string)
 }
 
-// member adds a session user to org with role and returns its id and token.
 func (e *consoleEnv) member(pool *pgxpool.Pool, org, email, displayName, role string) (string, string) {
 	e.t.Helper()
 	uid, tok := e.sessionUser(email, displayName)
@@ -42,14 +39,11 @@ func TestConsoleKeyRoleCeiling(t *testing.T) {
 	_, opTok := env.member(pool, org, "op@example.com", "", "operator")
 	_, viewerTok := env.member(pool, org, "viewer@example.com", "", "viewer")
 
-	// The role ceiling: an admin cannot mint an owner key.
 	env.expect("POST", "/v1/keys", adminTok, org, `{"name":"too high","role":"owner","scopes":["events:read"]}`, 403, "scope_exceeds_role")
-	// Scopes must fit the requested role, and be known.
 	env.expect("POST", "/v1/keys", adminTok, org, `{"name":"viewer write","role":"viewer","scopes":["endpoints:write"]}`, 422, "invalid_scopes")
 	env.expect("POST", "/v1/keys", adminTok, org, `{"name":"op keys","role":"operator","scopes":["keys:write"]}`, 422, "invalid_scopes")
 	env.expect("POST", "/v1/keys", adminTok, org, `{"name":"bogus","role":"admin","scopes":["root:all"]}`, 422, "invalid_scopes")
 	env.expect("POST", "/v1/keys", adminTok, org, `{"name":"none","role":"admin","scopes":[]}`, 422, "invalid_scopes")
-	// Name, role and expiry validation.
 	env.expect("POST", "/v1/keys", adminTok, org, `{"name":"   ","role":"admin","scopes":["events:read"]}`, 422, "invalid_key")
 	env.expect("POST", "/v1/keys", adminTok, org, `{"name":"`+strings.Repeat("a", 81)+`","role":"admin","scopes":["events:read"]}`, 422, "invalid_key")
 	env.expect("POST", "/v1/keys", adminTok, org, `{"name":"x","role":"root","scopes":["events:read"]}`, 422, "invalid_key")
@@ -71,7 +65,6 @@ func TestConsoleKeyRoleCeiling(t *testing.T) {
 	if err != nil || exp.Before(time.Now().Add(29*24*time.Hour)) || exp.After(time.Now().Add(31*24*time.Hour)) {
 		t.Fatalf("expires_at %v %v", created["expires_at"], err)
 	}
-	// A key minted by a non-owner never resolves as owner.
 	me := env.expect("GET", "/v1/me", raw, "", "", 200, "")
 	if me["role"] != "operator" {
 		t.Fatalf("console key me %v", me)
@@ -82,13 +75,11 @@ func TestConsoleKeyRoleCeiling(t *testing.T) {
 		t.Fatalf("stored key member=%v by=%s %v", memberID, createdBy, err)
 	}
 
-	// Operators and viewers lack keys:write; viewers lack keys:read.
 	env.expect("POST", "/v1/keys", opTok, org, `{"name":"op","role":"operator","scopes":["endpoints:write"]}`, 403, "forbidden")
 	env.expect("POST", "/v1/keys", viewerTok, org, `{"name":"v","role":"viewer","scopes":["events:read"]}`, 403, "forbidden")
 	env.expect("GET", "/v1/keys", opTok, org, "", 200, "")
 	env.expect("GET", "/v1/keys", viewerTok, org, "", 403, "forbidden")
 
-	// The owner can mint an owner key; the listing is newest first.
 	env.expect("POST", "/v1/keys", ownerTok, org, `{"name":"owner key","role":"owner","scopes":["keys:read","keys:write"]}`, 201, "")
 	list := env.expect("GET", "/v1/keys", ownerTok, org, "", 200, "")
 	data := list["data"].([]any)
@@ -104,7 +95,6 @@ func TestConsoleKeyRoleCeiling(t *testing.T) {
 			t.Fatalf("owner created_by %v", k)
 		}
 	}
-	// Bootstrap-style key: no creator.
 	foreign, foreignKey := tenantKey(t, pool, "foreign")
 	if _, err := pool.Exec(context.Background(), `UPDATE api_keys SET scopes=array_append(scopes,'keys:read') WHERE organization_id=$1`, foreign); err != nil {
 		t.Fatal(err)
@@ -139,7 +129,6 @@ func TestKeyRevokeAndLastUsed(t *testing.T) {
 	if lastUsed == nil {
 		t.Fatal("last_used_at not set after use")
 	}
-	// Further use within a minute leaves last_used_at alone.
 	for i := 0; i < 5; i++ {
 		env.expect("GET", "/v1/endpoints", raw, "", "", 200, "")
 	}
@@ -151,7 +140,6 @@ func TestKeyRevokeAndLastUsed(t *testing.T) {
 
 	env.expect("DELETE", "/v1/keys/"+keyID, ownerTok, org, "", 204, "")
 	env.expect("GET", "/v1/endpoints", raw, "", "", 401, "unauthorized")
-	// Idempotent: a second revoke is 204 without a second audit row.
 	env.expect("DELETE", "/v1/keys/"+strings.ToUpper(keyID), ownerTok, org, "", 204, "")
 	revoked := env.expect("GET", "/v1/keys", ownerTok, org, "", 200, "")["data"].([]any)
 	if len(revoked) != 1 || revoked[0].(map[string]any)["revoked_at"] == nil || revoked[0].(map[string]any)["last_used_at"] == nil {
@@ -168,7 +156,6 @@ func TestKeyRevokeAndLastUsed(t *testing.T) {
 	env.expect("DELETE", "/v1/keys/"+foreignKeyID, ownerTok, org, "", 404, "not_found")
 	env.expect("GET", "/v1/endpoints", foreignKey, "", "", 200, "")
 
-	// A key cannot revoke itself.
 	self := env.expect("POST", "/v1/keys", ownerTok, org, `{"name":"manager","role":"admin","scopes":["keys:read","keys:write","team:read"]}`, 201, "")
 	selfRaw, selfID := self["key"].(string), self["id"].(string)
 	env.expect("DELETE", "/v1/keys/"+selfID, selfRaw, "", "", 409, "cannot_revoke_self")
@@ -199,7 +186,6 @@ func TestKeyRevokeAndLastUsed(t *testing.T) {
 func TestKeyOutlivesCreator(t *testing.T) {
 	pool, _ := setup(t)
 	env, _, ownerTok, org := keyWorkspace(t, pool)
-	// Member keys record the member role and a name within the key bound.
 	member := env.expect("POST", "/v1/team/members", ownerTok, org, `{"name":"`+strings.Repeat("m", 100)+`","email":"m@example.com","role":"viewer"}`, 201, "")
 	var memberKeyRole, memberKeyName string
 	if err := pool.QueryRow(context.Background(), `SELECT role,name FROM api_keys WHERE member_id=$1`, member["id"]).Scan(&memberKeyRole, &memberKeyName); err != nil || memberKeyRole != "viewer" || memberKeyName != strings.Repeat("m", 80) {
@@ -218,8 +204,6 @@ func TestKeyOutlivesCreator(t *testing.T) {
 	}
 }
 
-// TestKeyLegacyNameMigration re-runs 000021 over rows that violate the name
-// length check (as rows written before 000019 may) and revokes one afterwards.
 func TestKeyLegacyNameMigration(t *testing.T) {
 	pool, _ := setup(t)
 	ctx := context.Background()
@@ -241,7 +225,7 @@ func TestKeyLegacyNameMigration(t *testing.T) {
 		kid, _ := id.New()
 		raw, _ := security.NewToken("whk_")
 		prefix, _ := security.KeyPrefix(raw)
-		// Write the row as it could exist before 000019, then restore the NOT VALID check.
+		// write the row as it could exist before 000019, then restore the NOT VALID check.
 		if _, err = pool.Exec(ctx, `ALTER TABLE api_keys DROP CONSTRAINT api_keys_name_length_check`); err != nil {
 			t.Fatal(err)
 		}
@@ -253,7 +237,7 @@ func TestKeyLegacyNameMigration(t *testing.T) {
 		}
 		ids[name] = kid
 	}
-	// Without the migration, PostgreSQL re-checks the NOT VALID constraint on update.
+	// without the migration, postgresql re-checks the NOT VALID constraint on update.
 	if _, err = pool.Exec(ctx, `UPDATE api_keys SET revoked_at=now() WHERE id=$1`, ids[""]); pgCode(err) != "23514" {
 		t.Fatalf("expected check violation before migration, got %v", err)
 	}
@@ -275,7 +259,6 @@ func TestKeyLegacyNameMigration(t *testing.T) {
 	}
 }
 
-// legacyKey inserts a pre-accounts key (no role, no member) into org.
 func legacyKey(t *testing.T, pool *pgxpool.Pool, org string, scopes []string) (string, string) {
 	t.Helper()
 	kid, _ := id.New()
@@ -318,9 +301,6 @@ func TestKeyScopesWithinCaller(t *testing.T) {
 	env.expect("POST", "/v1/keys", legacy, "", `{"name":"same","role":"owner","scopes":["keys:write"]}`, 201, "")
 }
 
-// TestAccountsRollbackRevokesConsoleRoleKeys rolls back 000021, 000020 and
-// 000019 and checks console keys with a non-owner role are revoked, since the
-// pre-accounts binary resolves keys without a member as owner.
 func TestAccountsRollbackRevokesConsoleRoleKeys(t *testing.T) {
 	pool, _ := setup(t)
 	ctx := context.Background()

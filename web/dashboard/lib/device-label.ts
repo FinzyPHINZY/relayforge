@@ -1,5 +1,3 @@
-// A rough "Browser on OS" label for the sessions list. The raw user agent is
-// still shown on hover, so a wrong guess costs nothing.
 
 const browsers: [RegExp, string][] = [
   [/\bEdg(?:e|A|iOS)?\//, "Edge"],
