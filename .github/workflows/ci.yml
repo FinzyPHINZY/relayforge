@@ -149,7 +149,16 @@ jobs:
             --query pipelineExecutionId --output text)
           echo "Pipeline execution: $execution_id"
           for attempt in {1..150}; do
-            status=$(aws codepipeline get-pipeline-execution --pipeline-name relayforge-prod-pipeline --pipeline-execution-id "$execution_id" --query 'pipelineExecution.status' --output text)
+            # a just-started execution can briefly be unknown to get-pipeline-execution
+            if ! status=$(aws codepipeline get-pipeline-execution --pipeline-name relayforge-prod-pipeline --pipeline-execution-id "$execution_id" --query 'pipelineExecution.status' --output text 2>/tmp/poll-error); then
+              if grep -q PipelineExecutionNotFoundException /tmp/poll-error && [ "$attempt" -le 6 ]; then
+                echo "Execution not visible yet (attempt $attempt), retrying"
+                sleep 10
+                continue
+              fi
+              cat /tmp/poll-error >&2
+              exit 1
+            fi
             case "$status" in
               Succeeded) exit 0 ;;
               Failed|Cancelled|Stopped|Superseded)
