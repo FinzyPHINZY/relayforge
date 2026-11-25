@@ -16,12 +16,10 @@ import (
 
 func roleAllows(role, scope string) bool {
 	switch role {
-	case "owner":
+	case "owner", "admin":
 		return true
-	case "admin":
-		return scope != "team:write"
 	case "operator":
-		return scope != "team:write"
+		return scope != "team:write" && scope != "keys:write"
 	case "viewer":
 		return scope == "team:read" || scope == "events:read" || scope == "endpoints:read" || scope == "deliveries:read" || scope == "metrics:read"
 	default:
@@ -61,12 +59,15 @@ func (s *Server) listTeamMembers(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"data": members})
 }
 
-func ownerOnly(w http.ResponseWriter, r *http.Request) bool {
-	if r.Context().Value(principalKey).(principal).Role != "owner" {
-		problem(w, 403, "forbidden", "Owner role required")
-		return false
+func requireRole(w http.ResponseWriter, r *http.Request, allowed ...string) bool {
+	role := r.Context().Value(principalKey).(principal).Role
+	for _, a := range allowed {
+		if role == a {
+			return true
+		}
 	}
-	return true
+	problem(w, 403, "forbidden", "Insufficient role")
+	return false
 }
 
 func validTeamRole(role string) bool {
@@ -74,7 +75,7 @@ func validTeamRole(role string) bool {
 }
 
 func (s *Server) createTeamMember(w http.ResponseWriter, r *http.Request) {
-	if !ownerOnly(w, r) {
+	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
 	var in struct {
@@ -146,7 +147,11 @@ func (s *Server) createTeamMember(w http.ResponseWriter, r *http.Request) {
 	// The member role is checked on every request, so a later role change takes
 	// effect immediately without issuing a new credential.
 	scopes := []string{"events:read", "events:write", "endpoints:read", "endpoints:write", "deliveries:read", "deliveries:write", "metrics:read", "team:read", "team:write"}
-	_, err = tx.Exec(ctx, `INSERT INTO api_keys (id,organization_id,member_id,name,key_prefix,key_hash,scopes) VALUES ($1,$2,$3,$4,$5,$6,$7)`, keyID, tenant(r), memberID, in.Name, prefix, security.Hash(raw), scopes)
+	keyName := in.Name
+	if runes := []rune(keyName); len(runes) > 80 {
+		keyName = strings.TrimSpace(string(runes[:80]))
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO api_keys (id,organization_id,member_id,name,key_prefix,key_hash,scopes,role) VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`, keyID, tenant(r), memberID, keyName, prefix, security.Hash(raw), scopes, in.Role)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
@@ -166,7 +171,7 @@ func (s *Server) createTeamMember(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
-	if !ownerOnly(w, r) {
+	if !requireRole(w, r, "owner", "admin") {
 		return
 	}
 	memberID := chi.URLParam(r, "id")
@@ -192,8 +197,29 @@ func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer tx.Rollback(ctx)
-	var oldRole, oldStatus string
-	err = tx.QueryRow(ctx, `SELECT role,status FROM team_members WHERE id=$1 AND organization_id=$2 FOR UPDATE`, memberID, tenant(r)).Scan(&oldRole, &oldStatus)
+	// lock the org's active owner rows first (in id order) so concurrent owner
+	// changes serialise and the last-owner check below cannot race.
+	activeOwners := map[string]bool{}
+	ownerRows, err := tx.Query(ctx, `SELECT id FROM team_members WHERE organization_id=$1 AND role='owner' AND status='active' ORDER BY id FOR UPDATE`, tenant(r))
+	if err != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	for ownerRows.Next() {
+		var ownerID string
+		if err = ownerRows.Scan(&ownerID); err != nil {
+			break
+		}
+		activeOwners[ownerID] = true
+	}
+	ownerRows.Close()
+	if err != nil || ownerRows.Err() != nil {
+		problem(w, 503, "storage_unavailable", "Storage unavailable")
+		return
+	}
+	// scan the stored id: the path id may differ in hex case.
+	var targetID, oldRole, oldStatus string
+	err = tx.QueryRow(ctx, `SELECT id::text,role,status FROM team_members WHERE id=$1 AND organization_id=$2 FOR UPDATE`, memberID, tenant(r)).Scan(&targetID, &oldRole, &oldStatus)
 	if errors.Is(err, pgx.ErrNoRows) {
 		problem(w, 404, "not_found", "Member not found")
 		return
@@ -202,12 +228,20 @@ func (s *Server) patchTeamMember(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
 	}
+	if oldRole == "owner" && r.Context().Value(principalKey).(principal).Role != "owner" {
+		problem(w, 403, "forbidden", "Only an owner can change an owner")
+		return
+	}
 	role, status := oldRole, oldStatus
 	if in.Role != nil {
 		role = *in.Role
 	}
 	if in.Status != nil {
 		status = *in.Status
+	}
+	if activeOwners[targetID] && (role != "owner" || status != "active") && len(activeOwners) == 1 {
+		problem(w, 409, "last_owner", "A workspace must keep at least one active owner")
+		return
 	}
 	if role != oldRole || status != oldStatus {
 		_, err = tx.Exec(ctx, `UPDATE team_members SET role=$3,status=$4,updated_at=now() WHERE id=$1 AND organization_id=$2`, memberID, tenant(r), role, status)

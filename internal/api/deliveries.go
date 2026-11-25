@@ -195,7 +195,7 @@ func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rows.Close()
-	reviews, err := s.DB.Query(r.Context(), `SELECT status,note,api_key_id,created_at FROM delivery_review_history WHERE delivery_id=$1 AND organization_id=$2 ORDER BY created_at,id`, deliveryID, tenant(r))
+	reviews, err := s.DB.Query(r.Context(), `SELECT status,note,api_key_id,actor_user_id,created_at FROM delivery_review_history WHERE delivery_id=$1 AND organization_id=$2 ORDER BY created_at,id`, deliveryID, tenant(r))
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return
@@ -203,13 +203,14 @@ func (s *Server) getDelivery(w http.ResponseWriter, r *http.Request) {
 	defer reviews.Close()
 	history := make([]map[string]any, 0)
 	for reviews.Next() {
-		var status, note, keyID string
+		var status, note string
+		var keyID, userID *string
 		var createdAt time.Time
-		if err = reviews.Scan(&status, &note, &keyID, &createdAt); err != nil {
+		if err = reviews.Scan(&status, &note, &keyID, &userID, &createdAt); err != nil {
 			problem(w, 503, "storage_unavailable", "Storage unavailable")
 			return
 		}
-		history = append(history, map[string]any{"status": status, "note": note, "api_key_id": keyID, "created_at": createdAt})
+		history = append(history, map[string]any{"status": status, "note": note, "api_key_id": keyID, "actor_user_id": userID, "created_at": createdAt})
 	}
 	if reviews.Err() != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")

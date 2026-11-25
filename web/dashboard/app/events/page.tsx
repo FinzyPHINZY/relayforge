@@ -2,9 +2,9 @@ import Link from "next/link";
 import { EmptyState, PageTitle, Shell } from "@/components/shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PublishEventForm } from "@/components/publish-event-form";
-import { ApiError, readApi, requireKey } from "@/lib/api";
+import { ApiError, readApi, readPrincipal, requireOrgSession } from "@/lib/api";
 import { dateTime, shortId } from "@/lib/format";
-import type { EventListItem, Page, Principal } from "@/lib/types";
+import type { EventListItem, Page } from "@/lib/types";
 
 type Filters = { cursor?: string; event_id?: string; type?: string; created_after?: string; created_before?: string; outcome?: string };
 const outcomes = ["", "no_delivery", "pending", "processing", "retry_wait", "succeeded", "exhausted", "cancelled"];
@@ -17,7 +17,7 @@ function outcomeSummary(event: EventListItem): string {
 }
 
 export default async function EventsPage({ searchParams }: { searchParams: Promise<Filters> }) {
-  const key = await requireKey();
+  const session = await requireOrgSession();
   const query = await searchParams;
   const params = new URLSearchParams({ limit: "50" });
   for (const name of ["event_id", "type", "created_after", "created_before", "outcome", "cursor"] as const) {
@@ -25,9 +25,9 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
   }
   let page: Page<EventListItem> = { data: [], next_cursor: "" };
   let filterError = "";
-  try { page = await readApi<Page<EventListItem>>(key, `/v1/events?${params}`); }
+  try { page = await readApi<Page<EventListItem>>(session, `/v1/events?${params}`); }
   catch (error) { if (error instanceof ApiError && error.status === 400) filterError = error.message; else throw error; }
-  const me = await readApi<Principal>(key, "/v1/me");
+  const me = await readPrincipal(session);
   const nextParams = new URLSearchParams(params);
   nextParams.set("cursor", page.next_cursor);
   return <Shell><PageTitle eyebrow="Publisher activity" title="Event explorer" description="Search accepted events and inspect each event's delivery runs. Filters are scoped to your organization." />

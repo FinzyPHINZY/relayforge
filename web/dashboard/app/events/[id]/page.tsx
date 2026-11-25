@@ -4,19 +4,21 @@ import { PageTitle, Shell } from "@/components/shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { PayloadReveal } from "@/components/payload-reveal";
 import { StatusBadge } from "@/components/status-badge";
-import { ApiError, readApi, requireKey } from "@/lib/api";
+import { ApiError, readApi, readPrincipal, requireOrgSession } from "@/lib/api";
+import { uuidPattern } from "@/lib/session-value";
 import { dateTime, shortId } from "@/lib/format";
-import type { Delivery, Event, Page, Principal } from "@/lib/types";
+import type { Delivery, Event, Page } from "@/lib/types";
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
-  const key = await requireKey();
+  const session = await requireOrgSession();
   const { id } = await params;
+  if (!uuidPattern.test(id)) notFound();
   let event: Event;
-  try { event = await readApi<Event>(key, `/v1/events/${encodeURIComponent(id)}`); }
+  try { event = await readApi<Event>(session, `/v1/events/${encodeURIComponent(id)}`); }
   catch (error) { if (error instanceof ApiError && error.status === 404) notFound(); throw error; }
-  const me = await readApi<Principal>(key, "/v1/me");
+  const me = await readPrincipal(session);
   const canReadDeliveries = me.scopes.includes("deliveries:read");
-  const deliveries = canReadDeliveries ? await readApi<Page<Delivery>>(key, `/v1/deliveries?event_id=${encodeURIComponent(id)}&limit=50`) : { data: [], next_cursor: "" };
+  const deliveries = canReadDeliveries ? await readApi<Page<Delivery>>(session, `/v1/deliveries?event_id=${encodeURIComponent(id)}&limit=50`) : { data: [], next_cursor: "" };
   const canReveal = me.scopes.includes("events:read") && (me.role === "owner" || me.role === "admin");
   return <Shell><PageTitle eyebrow="Event details" title={event.type} description={`Accepted ${dateTime(event.created_at)}`} action={<Link className="text-sm text-emerald-300 hover:underline" href="/events">← All events</Link>} />
     <Card><CardHeader><h2 className="font-semibold">Event record</h2></CardHeader><CardContent className="space-y-4 text-sm"><div><p className="text-xs text-slate-500">Event ID</p><p className="mt-1 break-all font-mono text-slate-200">{event.id}</p></div><div><p className="text-xs text-slate-500">Type</p><p className="mt-1 text-slate-200">{event.type}</p></div>{canReveal ? <PayloadReveal eventId={event.id} /> : <p className="rounded-lg border border-white/10 bg-slate-950 p-3 text-xs text-slate-400">Payload inspection is available to owners and admins. Event metadata and delivery history remain visible with read access.</p>}</CardContent></Card>

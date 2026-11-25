@@ -33,9 +33,22 @@ export type Endpoint = {
   field_map: Record<string, string>;
 };
 
-export type Principal = { role: "owner" | "admin" | "operator" | "viewer"; scopes: string[] };
-export type TeamMember = { id: string; name: string; email: string; role: "admin" | "operator" | "viewer"; status: "active" | "suspended"; created_at: string };
-export type AuditEvent = { id: string; actor_api_key_id?: string; actor_key_name: string; actor_role: string; action: string; target_type: "organization" | "api_key" | "team_member" | "endpoint" | "delivery" | "event"; target_id: string; details: Record<string, unknown>; created_at: string };
+export type Principal = { role: "" | "owner" | "admin" | "operator" | "viewer"; scopes: string[]; user_id?: string };
+export type ApiKey = {
+  id: string;
+  name: string;
+  prefix: string;
+  role: "owner" | "admin" | "operator" | "viewer";
+  scopes: string[];
+  created_by: { id: string; display_name: string | null } | null;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+  revoked_at: string | null;
+};
+export type AccountSession = { id: string; created_at: string; last_seen_at: string; expires_at: string; user_agent: string; current: boolean };
+export type TeamMember = { id: string; name: string; email: string; role: "owner" | "admin" | "operator" | "viewer"; status: "active" | "suspended"; created_at: string };
+export type AuditEvent = { id: string; actor_api_key_id?: string; actor_user_id?: string; actor_key_name: string; actor_role: string; action: string; target_type: "organization" | "api_key" | "team_member" | "endpoint" | "delivery" | "event"; target_id: string; details: Record<string, unknown>; created_at: string };
 export type AnalyticsBucket = { start: string; attempts: number; succeeded: number; failed: number; p50_duration_ms: number | null; p95_duration_ms: number | null };
 export type DeliveryAnalytics = { window: "24h" | "7d" | "30d"; buckets: AnalyticsBucket[] };
 export type OverviewWindow = "24h" | "7d" | "30d";
@@ -82,7 +95,7 @@ export type Delivery = {
   review_status?: "unreviewed" | "investigating" | "resolved";
 };
 
-export type ReviewHistoryEntry = { status: "investigating" | "resolved"; note: string; api_key_id: string; created_at: string };
+export type ReviewHistoryEntry = { status: "investigating" | "resolved"; note: string; api_key_id: string | null; actor_user_id: string | null; created_at: string };
 
 export type Attempt = {
   id: string;

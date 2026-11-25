@@ -2,20 +2,20 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PageTitle, Shell, EmptyState } from "@/components/shell";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { readApi, requireKey } from "@/lib/api";
+import { readApi, readPrincipal, requireOrgSession } from "@/lib/api";
 import { dateTime, shortId } from "@/lib/format";
-import type { AuditEvent, Page, Principal } from "@/lib/types";
+import type { AuditEvent, Page } from "@/lib/types";
 
 const targetPath: Partial<Record<AuditEvent["target_type"], string>> = { endpoint: "/endpoints", delivery: "/deliveries", event: "/events" };
 
 export default async function AuditPage({ searchParams }: { searchParams: Promise<{ cursor?: string }> }) {
-  const key = await requireKey();
-  const me = await readApi<Principal>(key, "/v1/me");
-  if (me.role !== "owner" || !me.scopes.includes("team:read")) notFound();
+  const session = await requireOrgSession();
+  const me = await readPrincipal(session);
+  if ((me.role !== "owner" && me.role !== "admin") || !me.scopes.includes("team:read")) notFound();
   const { cursor } = await searchParams;
   const params = new URLSearchParams({ limit: "50" });
   if (cursor) params.set("cursor", cursor);
-  const page = await readApi<Page<AuditEvent>>(key, `/v1/audit?${params}`);
+  const page = await readApi<Page<AuditEvent>>(session, `/v1/audit?${params}`);
   return <Shell><PageTitle eyebrow="Access and operations" title="Audit history" description="A tenant-scoped record of operator changes and payload inspections. Secrets, payloads, and destination URLs are never recorded here." />
     <Card><CardHeader><h2 className="font-semibold">Recent actions</h2><p className="mt-1 text-xs text-slate-500">Newest first · retained for the organization lifetime and included in its export.</p></CardHeader><CardContent>
       {page.data.length ? <ol className="divide-y divide-white/10">{page.data.map((entry) => {

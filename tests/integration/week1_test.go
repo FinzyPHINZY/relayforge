@@ -9,6 +9,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
+	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"testing"
 
@@ -45,17 +49,33 @@ func setupWithContainer(t testing.TB) (*pgxpool.Pool, *httptest.Server, *postgre
 	if err := pool.Ping(ctx); err != nil {
 		t.Fatalf("PostgreSQL did not accept a connection after readiness: %v", err)
 	}
-	for _, path := range []string{"../../db/migrations/000001_foundation.up.sql", "../../db/migrations/000002_delivery_engine.up.sql", "../../db/migrations/000003_recovery.up.sql", "../../db/migrations/000004_retention.up.sql", "../../db/migrations/000005_endpoint_circuits.up.sql", "../../db/migrations/000006_delivery_reviews.up.sql", "../../db/migrations/000007_fair_claims.up.sql", "../../db/migrations/000008_trace_context.up.sql", "../../db/migrations/000009_scheduled_events.up.sql", "../../db/migrations/000010_endpoint_verification.up.sql", "../../db/migrations/000011_analytics.up.sql", "../../db/migrations/000012_payload_transforms.up.sql", "../../db/migrations/000013_team_roles.up.sql", "../../db/migrations/000014_endpoint_delivery_limits.up.sql", "../../db/migrations/000015_audit_events.up.sql", "../../db/migrations/000016_overview_analytics.up.sql", "../../db/migrations/000017_event_payload_audit.up.sql", "../../db/migrations/000018_attempt_retry_schedule.up.sql"} {
+	paths, err := filepath.Glob("../../db/migrations/*.up.sql")
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no migrations found: %v", err)
+	}
+	sort.Strings(paths)
+	versions := make([]int, 0, len(paths))
+	for _, path := range paths {
 		schema, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if _, err = pool.Exec(ctx, string(schema), pgx.QueryExecModeSimpleProtocol); err != nil {
+			t.Fatalf("%s: %v", path, err)
+		}
+		version, err := strconv.Atoi(strings.SplitN(filepath.Base(path), "_", 2)[0])
+		if err != nil {
 			t.Fatal(err)
 		}
+		versions = append(versions, version)
 	}
-	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY); INSERT INTO schema_migrations (version) VALUES (1),(2),(3),(4),(5),(6),(7),(8),(9),(10),(11),(12),(13),(14),(15),(16),(17),(18)`, pgx.QueryExecModeSimpleProtocol); err != nil {
+	if _, err = pool.Exec(ctx, `CREATE TABLE schema_migrations (version integer PRIMARY KEY)`, pgx.QueryExecModeSimpleProtocol); err != nil {
 		t.Fatal(err)
+	}
+	for _, version := range versions {
+		if _, err = pool.Exec(ctx, `INSERT INTO schema_migrations (version) VALUES ($1)`, version); err != nil {
+			t.Fatal(err)
+		}
 	}
 	server := httptest.NewServer((&api.Server{DB: pool, EncryptionKey: bytes.Repeat([]byte{1}, 32), EncryptionKeyID: "test"}).Router())
 	t.Cleanup(server.Close)

@@ -2,15 +2,37 @@ import { ArrowUpRight, Webhook } from "lucide-react";
 import { signOut } from "@/app/actions";
 import { ConsoleNav } from "@/components/console-nav";
 import { Button } from "@/components/ui/button";
+import { WorkspaceSwitcher } from "@/components/workspace-switcher";
+import { fetchAccount, type Workspace } from "@/lib/account";
+import { fetchPrincipal } from "@/lib/api";
+import { getSession } from "@/lib/session";
 
-export function Shell({ children }: { children: React.ReactNode }) {
+type ShellContext = { scopes: string[]; user: { workspaces: Workspace[]; currentId: string | null } | null };
+
+async function loadShellContext(): Promise<ShellContext> {
+  const session = await getSession();
+  if (!session) return { scopes: [], user: null };
+  const needsOrg = session.kind === "user" && !session.org;
+  const [me, account] = await Promise.all([
+    needsOrg ? null : fetchPrincipal(session).catch(() => null),
+    session.kind === "user" ? fetchAccount(session.token).catch(() => null) : null,
+  ]);
+  return {
+    scopes: me?.scopes ?? [],
+    user: session.kind === "user" ? { workspaces: account?.workspaces ?? [], currentId: session.org } : null,
+  };
+}
+
+export async function Shell({ children }: { children: React.ReactNode }) {
+  const context = await loadShellContext();
   return <div className="console-theme min-h-screen bg-[#f6f7f1] lg:flex">
     <aside className="console-sidebar border-b border-white/10 bg-[#14281e] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-64 lg:flex-col lg:border-b-0 lg:border-r">
       <div className="flex items-center gap-3 border-b border-white/10 px-6 py-6">
         <div className="flex size-10 -rotate-6 items-center justify-center rounded-xl bg-[#b7f36d] text-[#173322]"><Webhook size={22} strokeWidth={2.3} /></div>
         <div><div className="text-base font-bold tracking-tight text-white">relayforge<span className="text-[#b7f36d]">.</span></div><div className="text-xs text-slate-500">Operator console</div></div>
       </div>
-      <ConsoleNav />
+      {context.user ? <WorkspaceSwitcher workspaces={context.user.workspaces} currentId={context.user.currentId} /> : null}
+      <ConsoleNav showKeys={context.scopes.includes("keys:read")} showAccount={Boolean(context.user)} />
       <div className="hidden flex-1 lg:block" />
       <div className="hidden border-t border-white/10 p-4 lg:block">
         <div className="mb-4 rounded-xl border border-[#679969]/30 bg-[#b7f36d]/5 p-3 text-xs leading-5 text-slate-400">Delivery attempts are at least once. Receivers should deduplicate by <code className="text-emerald-300">webhook-id</code>.</div>

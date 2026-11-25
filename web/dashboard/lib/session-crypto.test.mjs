@@ -1,14 +1,22 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { sealSession, openSession } from "./session-crypto.ts";
+import { sealSession, openSession, openSessionPayload } from "./session-crypto.ts";
 
 const secret = Buffer.alloc(32, 7);
 
-test("session encrypts the key and expires after eight hours", () => {
+test("session encrypts the payload and expires after eight hours by default", () => {
   const value = sealSession("whk_example", secret, 1000);
   assert.equal(value.includes("whk_example"), false);
   assert.equal(openSession(value, secret, 1001), "whk_example");
   assert.equal(openSession(value, secret, 1000 + 8 * 60 * 60 * 1000), null);
+});
+
+test("session seals any payload with the given lifetime", () => {
+  const payload = JSON.stringify({ kind: "user", token: "rfs_example", org: null });
+  const value = sealSession(payload, secret, 1000, 30 * 24 * 60 * 60);
+  assert.equal(openSession(value, secret, 1000 + 8 * 60 * 60 * 1000), payload);
+  assert.deepEqual(openSessionPayload(value, secret, 1001), { value: payload, expires: 1000 + 30 * 24 * 60 * 60 * 1000 });
+  assert.equal(openSession(value, secret, 1000 + 30 * 24 * 60 * 60 * 1000), null);
 });
 
 test("tampering or changing the server key invalidates a session", () => {

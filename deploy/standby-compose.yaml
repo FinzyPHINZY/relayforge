@@ -1,5 +1,7 @@
 # Read-only regional standby. REPLICA_DATABASE_URL must point to an externally
 # replicated PostgreSQL standby. Do not run migrations or workers here.
+# console sign-in is not configured: it writes sessions, so the read-only standby
+# leaves DASHBOARD_API_TOKEN unset and offers API-key login only.
 services:
   api:
     build:
@@ -27,7 +29,7 @@ services:
       api: {condition: service_healthy}
     restart: unless-stopped
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.10-alpine
     ports:
       - "80:80"
       - "443:443"

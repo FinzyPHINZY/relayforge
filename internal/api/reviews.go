@@ -72,8 +72,14 @@ func (s *Server) reviewDelivery(w http.ResponseWriter, r *http.Request) {
 		problem(w, 503, "internal_error", "ID generation failed")
 		return
 	}
-	keyID := r.Context().Value(principalKey).(principal).KeyID
-	_, err = tx.Exec(ctx, `INSERT INTO delivery_review_history (id,delivery_id,organization_id,api_key_id,status,note) VALUES ($1,$2,$3,$4,$5,$6)`, actionID, deliveryID, orgID, keyID, in.Status, in.Note)
+	p := r.Context().Value(principalKey).(principal)
+	var keyID, userID any
+	if p.KeyID != "" {
+		keyID = p.KeyID
+	} else {
+		userID = p.UserID
+	}
+	_, err = tx.Exec(ctx, `INSERT INTO delivery_review_history (id,delivery_id,organization_id,api_key_id,actor_user_id,status,note) VALUES ($1,$2,$3,$4,$5,$6,$7)`, actionID, deliveryID, orgID, keyID, userID, in.Status, in.Note)
 	if err != nil {
 		problem(w, 503, "storage_unavailable", "Storage unavailable")
 		return

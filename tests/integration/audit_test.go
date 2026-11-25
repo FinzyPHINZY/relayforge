@@ -3,9 +3,13 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"strings"
 	"testing"
+
+	"webhook_delivery/internal/api"
+	"webhook_delivery/internal/id"
 )
 
 func TestAuditTrailIsTenantScopedRedactedAndAtomic(t *testing.T) {
@@ -60,6 +64,16 @@ func TestAuditTrailIsTenantScopedRedactedAndAtomic(t *testing.T) {
 	resp, _ = request(t, http.MethodGet, server.URL+"/v1/audit", member.APIKey, "")
 	if resp.StatusCode != 403 {
 		t.Fatalf("viewer audit status=%d", resp.StatusCode)
+	}
+	// role changes go straight to SQL so the audit event counts asserted below stay stable.
+	for role, want := range map[string]int{"operator": 403, "admin": 200} {
+		if _, err := pool.Exec(context.Background(), `UPDATE team_members SET role=$2 WHERE id=$1`, member.ID, role); err != nil {
+			t.Fatal(err)
+		}
+		resp, body = request(t, http.MethodGet, server.URL+"/v1/audit", member.APIKey, "")
+		if resp.StatusCode != want {
+			t.Fatalf("%s audit status=%d want=%d body=%s", role, resp.StatusCode, want, body)
+		}
 	}
 	resp, body = request(t, http.MethodPatch, server.URL+"/v1/team/members/"+member.ID, ownerKey, `{"role":"operator","status":"suspended"}`)
 	if resp.StatusCode != 200 {
@@ -147,5 +161,58 @@ func TestAuditTrailIsTenantScopedRedactedAndAtomic(t *testing.T) {
 	}
 	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE organization_id=$1`, org).Scan(&count); err != nil || count != 6 {
 		t.Fatalf("failed patch audit count=%d err=%v", count, err)
+	}
+
+	env := newConsoleEnv(t, pool, &api.Server{})
+	ownerID, ownerTok := env.sessionUser("ada.owner@example.com", "Ada Owner")
+	ws := env.expect(http.MethodPost, "/v1/account/workspaces", ownerTok, "", `{"name":"audited"}`, 201, "")
+	wsID := ws["id"].(string)
+	plainID, plainTok := env.sessionUser("plain.user@example.com", "")
+	memberID, _ := id.New()
+	if _, err := pool.Exec(context.Background(), `INSERT INTO team_members (id,organization_id,name,email,role,user_id) VALUES ($1,$2,'plain','plain.user@example.com','viewer',$3)`, memberID, wsID, plainID); err != nil {
+		t.Fatal(err)
+	}
+	env.expect(http.MethodPost, "/v1/account/sign-out", plainTok, "", "", 204, "")
+	resp, body = request(t, http.MethodGet, server.URL+"/v1/audit", ownerKey, "")
+	if resp.StatusCode != 200 || strings.Contains(string(body), "ada.owner") {
+		t.Fatalf("key audit read status=%d body=%s", resp.StatusCode, body)
+	}
+	r, _ := http.NewRequest(http.MethodGet, env.url+"/v1/audit", nil)
+	r.Header.Set("Authorization", "Bearer "+ownerTok)
+	r.Header.Set("X-RelayForge-Org", wsID)
+	res, err := http.DefaultClient.Do(r)
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw, _ := io.ReadAll(res.Body)
+	res.Body.Close()
+	if res.StatusCode != 200 || strings.Contains(string(raw), "@example.com") {
+		t.Fatalf("user audit status=%d body=%s", res.StatusCode, raw)
+	}
+	var userPage struct {
+		Data []struct {
+			ActorAPIKeyID *string `json:"actor_api_key_id"`
+			ActorUserID   string  `json:"actor_user_id"`
+			ActorKeyName  string  `json:"actor_key_name"`
+			ActorRole     string  `json:"actor_role"`
+			Action        string  `json:"action"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &userPage); err != nil || len(userPage.Data) != 2 {
+		t.Fatalf("user audit page %s err=%v", raw, err)
+	}
+	for _, e := range userPage.Data {
+		switch e.Action {
+		case "organization.created_by_user":
+			if e.ActorUserID != ownerID || e.ActorKeyName != "Ada Owner" || e.ActorRole != "owner" || e.ActorAPIKeyID != nil {
+				t.Fatalf("created_by_user entry %+v", e)
+			}
+		case "user.signed_out":
+			if e.ActorUserID != plainID || e.ActorKeyName != "plain.user" || e.ActorRole != "viewer" {
+				t.Fatalf("signed_out entry %+v", e)
+			}
+		default:
+			t.Fatalf("unexpected entry %+v", e)
+		}
 	}
 }

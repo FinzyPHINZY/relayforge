@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"webhook_delivery/internal/api"
 	"webhook_delivery/internal/delivery"
+	"webhook_delivery/internal/id"
 )
 
 func TestExhaustedDeliveryReviewIsAuditedAndTenantScoped(t *testing.T) {
@@ -79,6 +81,36 @@ func TestExhaustedDeliveryReviewIsAuditedAndTenantScoped(t *testing.T) {
 	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM audit_events WHERE target_id=$1 AND action='delivery.reviewed'`, claim.ID).Scan(&count); err != nil || count != 2 {
 		t.Fatalf("general review audit count=%d err=%v", count, err)
 	}
+	env := newConsoleEnv(t, pool, &api.Server{})
+	uid, sessTok := env.sessionUser("reviewer@example.com", "Reviewer")
+	memberID, _ := id.New()
+	if _, err := pool.Exec(context.Background(), `INSERT INTO team_members (id,organization_id,name,email,role,user_id) VALUES ($1,$2,'Reviewer','reviewer@example.com','owner',$3)`, memberID, org, uid); err != nil {
+		t.Fatal(err)
+	}
+	env.expect(http.MethodPatch, "/v1/deliveries/"+claim.ID+"/review", sessTok, org, `{"status":"investigating","note":"session check"}`, 200, "")
+	var actorUser string
+	var historyKey *string
+	if err := pool.QueryRow(context.Background(), `SELECT actor_user_id::text, api_key_id::text FROM delivery_review_history WHERE delivery_id=$1 AND note='session check'`, claim.ID).Scan(&actorUser, &historyKey); err != nil || actorUser != uid || historyKey != nil {
+		t.Fatalf("session history actor=%q key=%v err=%v", actorUser, historyKey, err)
+	}
+	if err := pool.QueryRow(context.Background(), `SELECT count(*) FROM delivery_review_history WHERE delivery_id=$1 AND api_key_id IS NOT NULL AND actor_user_id IS NULL`, claim.ID).Scan(&count); err != nil || count != 2 {
+		t.Fatalf("key history rows=%d err=%v", count, err)
+	}
+	for _, bearer := range []string{key, sessTok} {
+		got := env.expect(http.MethodGet, "/v1/deliveries/"+claim.ID, bearer, org, "", 200, "")
+		hist, _ := got["review_history"].([]any)
+		if len(hist) != 3 {
+			t.Fatalf("history %v", got["review_history"])
+		}
+		last := hist[2].(map[string]any)
+		if last["api_key_id"] != nil || last["actor_user_id"] != uid {
+			t.Fatalf("session history entry %v", last)
+		}
+		if first := hist[0].(map[string]any); first["api_key_id"] == nil || first["actor_user_id"] != nil {
+			t.Fatalf("key history entry %v", first)
+		}
+	}
+
 	publishDeliveryEvent(t, apiServer, key)
 	pending := dispatchAndClaim(t, pool, "second-worker")
 	resp, _ = request(t, http.MethodPatch, apiServer.URL+"/v1/deliveries/"+pending.ID+"/review", key, `{"status":"investigating"}`)

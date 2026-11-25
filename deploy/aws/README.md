@@ -40,6 +40,130 @@ update both repository secrets when needed.
 5. Verify `https://relayforge.site/` and
    `https://api.relayforge.site/health/ready`.
 
+## Console sign-in setup
+
+Console sign-in (GitHub and emailed sign-in links) is off until
+`DASHBOARD_PUBLIC_URL`, `DASHBOARD_API_TOKEN` and `IP_HASH_KEY_BASE64` are set;
+until then the console offers API-key login only. These steps are manual and
+are done by the project owner.
+
+1. **Create the GitHub OAuth App.** In GitHub → Settings → Developer settings →
+   OAuth Apps → New OAuth App, set the homepage URL to
+   `https://relayforge.site` and the authorization callback URL to
+   `https://relayforge.site/auth/github/callback`. Generate a client secret.
+   For local development create a separate app with callback
+   `http://localhost:3000/auth/github/callback`.
+2. **Add the sign-in settings to the host env file.** Open a Session Manager
+   shell on the instance and *append* the variables below to
+   `/etc/relayforge/relayforge.env`. Do not replace the file, and never change
+   `ENCRYPTION_KEY_BASE64`: existing endpoint secrets are encrypted with it.
+   Generate each secret separately with `openssl rand -base64 32`.
+
+   ```sh
+   DASHBOARD_PUBLIC_URL=https://relayforge.site
+   DASHBOARD_API_TOKEN=<openssl rand -base64 32>
+   IP_HASH_KEY_BASE64=<openssl rand -base64 32>
+   MAIL_PROVIDER=ses
+   MAIL_FROM=RelayForge <sign-in@relayforge.site>
+   AWS_REGION=eu-north-1
+   MAIL_LOG_BODIES=false
+   GITHUB_CLIENT_ID=<from step 1>
+   GITHUB_CLIENT_SECRET=<from step 1>
+   MAGIC_LINK_PER_EMAIL_PER_HOUR=5
+   MAGIC_LINK_PER_IP_PER_HOUR=20
+   OAUTH_START_PER_IP_PER_HOUR=30
+   MAX_WORKSPACES_PER_USER=3
+   ```
+
+   Keep the file mode `0600`. Do not add AWS access keys: the API container
+   gets SES credentials from the instance role through IMDSv2 (the instance's
+   metadata hop limit is 2 so containers can reach it). The send permission is
+   limited to `ses:SendEmail` on the `relayforge.site` identity with the From
+   address `sign-in@relayforge.site`.
+3. **Deploy the stack** with the command under [Maintenance](#maintenance).
+   It creates the SES domain identity (Easy DKIM, MAIL FROM domain
+   `mail.relayforge.site`) and adds these records to the Route 53 zone: three
+   DKIM CNAMEs (also shown in the `MailDkimCname1..3` stack outputs), the MAIL
+   FROM MX `10 feedback-smtp.eu-north-1.amazonses.com` and SPF TXT
+   `v=spf1 include:amazonses.com ~all`, and a monitoring-only DMARC record
+   `v=DMARC1; p=none;` at `_dmarc.relayforge.site`. If you move DNS off
+   Route 53, copy those records to the new DNS provider. If an SES identity for
+   `relayforge.site` was already created by hand, the stack update fails;
+   delete that identity first or import it into the stack.
+4. **Wait for verification.** Repeat until `DkimAttributes.Status` and
+   `MailFromAttributes.MailFromDomainStatus` are both `SUCCESS` (usually
+   minutes, up to 72 hours):
+
+   ```sh
+   aws sesv2 get-email-identity --email-identity relayforge.site \
+     --profile project --region eu-north-1
+   ```
+
+5. **Request SES production access.** New SES accounts are in the sandbox:
+   they send only to verified addresses, so sign-in emails to arbitrary users
+   work only after production access is granted. This is a request the project
+   owner makes and consents to: in the Amazon SES console in `eu-north-1`, open
+   **Account dashboard → Request production access**, choose the
+   transactional mail type, enter `https://relayforge.site`, and describe the
+   sign-in email use case. AWS reviews the request, typically within a day.
+
+   **Testing in the sandbox.** In the sandbox SES also authorizes
+   `ses:SendEmail` against the *recipient's* verified identity, so the stack's
+   least-privilege policy (domain identity only) is rejected with
+   `AccessDenied` for test sends. To test before production access, verify a
+   test address and add a temporary policy to the host role out of band:
+
+   ```sh
+   aws sesv2 create-email-identity --email-identity <test@example.com> \
+     --profile project --region eu-north-1
+   # Click the verification link SES emails to that address, then:
+   ROLE=$(aws cloudformation describe-stack-resource --stack-name relayforge-prod \
+     --logical-resource-id HostRole --query StackResourceDetail.PhysicalResourceId \
+     --output text --profile project --region eu-north-1)
+   aws iam put-role-policy --role-name "$ROLE" --policy-name ses-sandbox-test-recipient \
+     --profile project --policy-document '{
+       "Version": "2012-10-17",
+       "Statement": [{
+         "Effect": "Allow",
+         "Action": "ses:SendEmail",
+         "Resource": "arn:aws:ses:eu-north-1:<account-id>:identity/<test@example.com>",
+         "Condition": {"StringEquals": {"ses:FromAddress": "sign-in@relayforge.site"}}
+       }]
+     }'
+   ```
+
+   Sign in with that test address only. Once production access is granted,
+   remove the temporary policy (and optionally the test identity):
+
+   ```sh
+   aws iam delete-role-policy --role-name "$ROLE" \
+     --policy-name ses-sandbox-test-recipient --profile project
+   aws sesv2 delete-email-identity --email-identity <test@example.com> \
+     --profile project --region eu-north-1
+   ```
+6. **Deploy the application** by merging to `main` (see One-time setup step 4).
+   The Compose file passes the new variables to the API and dashboard.
+7. **Link the bootstrap organization to your email.** On the host, find the
+   organization ID and link yourself as its owner:
+
+   ```sh
+   cd /opt/relayforge/current
+   docker compose --env-file /etc/relayforge/relayforge.env -p relayforge -f deploy/compose.yaml \
+     exec -T postgres psql -U webhooks -d webhooks -c 'SELECT id, name FROM organizations'
+   docker compose --env-file /etc/relayforge/relayforge.env -p relayforge -f deploy/compose.yaml \
+     --profile ops run --rm tenant-admin -action link-owner -org-id <id> -email <addr>
+   ```
+
+8. **Sign in** at `https://relayforge.site/login` with GitHub (using an
+   account whose verified primary email is `<addr>`) or by requesting an email link.
+
+Caddy sets `X-Forwarded-For` to the connecting client (it trusts no upstream
+proxy) and strips client-supplied `X-RelayForge-Dashboard-Token` and
+`X-RelayForge-Client-IP` headers. The dashboard reaches the API at
+`http://api:8080` on the Compose network, and the API port is bound to
+`127.0.0.1` on the host, so the API is reachable from outside only through
+Caddy.
+
 ## Maintenance
 
 The AWS CLI default profile is a different project. Always pass
