@@ -51,6 +51,7 @@
 .landing-flow { margin: 30px 0 27px; }
 .landing-flow-row { display: flex; align-items: center; gap: 15px; min-height: 94px; padding: 16px; border: 1px solid #3c5345; border-radius: 11px; background: #1b3327; box-shadow: 0 12px 24px rgba(0,0,0,.1); }
 .landing-flow-row-middle { border-color: #8bb95b; background: #253f2e; box-shadow: 0 0 0 3px rgba(183,243,109,.08), 0 12px 24px rgba(0,0,0,.12); }
+.landing-flow-row.is-active { border-color: #b7f36d; box-shadow: 0 0 0 3px rgba(183,243,109,.15), 0 16px 28px rgba(0,0,0,.16); }
 .landing-flow-icon { display: grid; flex: none; place-items: center; width: 42px; height: 42px; border-radius: 10px; color: #c2f690; background: #385039; }
 .landing-flow-icon-a { color: #aec8ae; background: #304637; }
 .landing-flow-icon-c { color: #b8edca; background: #315445; }

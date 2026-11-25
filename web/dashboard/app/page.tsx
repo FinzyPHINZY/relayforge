@@ -1,12 +1,14 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { MeasuredCount } from "@/components/measured-count";
+import { LandingPipeline } from "@/components/landing-pipeline";
+import { PublicSmoothScroll } from "@/components/public-smooth-scroll";
 import {
   Activity,
   ArrowDownRight,
   ArrowRight,
   ArrowUpRight,
   Check,
-  CheckCheck,
   Clock3,
   CalendarClock,
   Building2,
@@ -120,6 +122,7 @@ function Brand({ light = false }: { light?: boolean }) {
 export default function LandingPage() {
   return (
     <div className="landing">
+      <PublicSmoothScroll />
       <header className="landing-header">
         <div className="landing-container landing-header-inner">
           <Brand />
@@ -148,31 +151,7 @@ export default function LandingPage() {
             <div className="landing-hero-note"><span className="landing-note-line" /> Built around durable state, at-least-once delivery, and a clear recovery path.</div>
           </div>
 
-          <div className="landing-visual" aria-label="Illustration of an event moving through RelayForge to a webhook endpoint" role="img">
-            <div className="landing-visual-grid" />
-            <div className="landing-visual-top"><span><span className="landing-live-dot" /> DELIVERY PIPELINE</span><span>LIVE FLOW <Activity size={13} aria-hidden="true" /></span></div>
-            <div className="landing-flow">
-              <div className="landing-flow-row landing-flow-row-first">
-                <span className="landing-flow-icon landing-flow-icon-a"><Terminal size={19} aria-hidden="true" /></span>
-                <div><span className="landing-flow-label">EVENT RECEIVED</span><strong>order.created</strong><small>Idempotency key · order_81f2</small></div>
-                <span className="landing-flow-check"><Check size={15} aria-hidden="true" /></span>
-              </div>
-              <div className="landing-flow-connector"><span /><span>committed to outbox</span></div>
-              <div className="landing-flow-row landing-flow-row-middle">
-                <span className="landing-flow-icon landing-flow-icon-b"><GitBranch size={19} aria-hidden="true" /></span>
-                <div><span className="landing-flow-label">RELAYFORGE</span><strong>Safely in motion</strong><small>Durable queue · bounded retries</small></div>
-                <span className="landing-flow-pulse"><span /></span>
-              </div>
-              <div className="landing-flow-connector"><span /><span>signed &amp; sent</span></div>
-              <div className="landing-flow-row landing-flow-row-last">
-                <span className="landing-flow-icon landing-flow-icon-c"><Webhook size={19} aria-hidden="true" /></span>
-                <div><span className="landing-flow-label">YOUR ENDPOINT</span><strong>Delivery acknowledged</strong><small>HTTP 204 · signature verified</small></div>
-                <span className="landing-flow-success"><CheckCheck size={17} aria-hidden="true" /></span>
-              </div>
-            </div>
-            <div className="landing-visual-bottom"><span><span className="landing-tiny-square" /> Every attempt has a record</span><span>01 / 01</span></div>
-            <div className="landing-float-card"><ShieldCheck size={19} aria-hidden="true" /><span><strong>Signed request</strong><small>Integrity built in</small></span></div>
-          </div>
+          <LandingPipeline />
         </section>
 
         <div className="landing-proof-wrap"><div className="landing-container landing-proof">
@@ -191,7 +170,7 @@ export default function LandingPage() {
               <Link href="/how-it-works#proof" className="landing-scale-link">Explore the measured proof <ArrowRight size={16} aria-hidden="true" /></Link>
             </div>
             <div className="landing-scale-results" aria-label="Measured reliability test results">
-              <div className="landing-scale-primary"><span>ACCEPTED &amp; ACCOUNTED FOR</span><strong>10,000 <small>/ 10,000</small></strong><p>Events, outbox records, and terminal deliveries reconciled.</p></div>
+              <div className="landing-scale-primary"><span>ACCEPTED &amp; ACCOUNTED FOR</span><strong><MeasuredCount /> <small>/ 10,000</small></strong><p>Events, outbox records, and terminal deliveries reconciled.</p></div>
               <div className="landing-scale-secondary"><div><strong>9,995</strong><span>succeeded</span></div><div><strong>5</strong><span>exhausted after injected HTTP 400</span></div><div><strong>11</strong><span>duplicate receipts observed</span></div></div>
             </div>
             <p className="landing-scale-footnote">One measured Testcontainers run on an 8-CPU host, Go 1.25.0, PostgreSQL 17 · 32 workers · 2m 48s total. At-least-once delivery can produce duplicates; receivers should deduplicate by <code>webhook-id</code>.</p>

@@ -11,11 +11,22 @@
 .docs-tint { border-block: 1px solid #dce7d8; background: #edf2e9; }
 
 .docs-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.docs-pair-panel { min-width: 0; }
 .docs-code { min-width: 0; margin: 12px 0 0; overflow: hidden; border: 1px solid #2f4a39; border-radius: 10px; background: #14291e; }
 .docs-pair .docs-code { margin: 0; }
 .docs-code figcaption { padding: 11px 16px; border-bottom: 1px solid #2f4a39; color: #a5c49f; font-size: 10px; font-weight: 800; letter-spacing: .13em; }
+.docs-code figcaption { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.docs-code figcaption button { display: inline-flex; align-items: center; gap: 6px; padding: 5px 7px; border-radius: 5px; color: #c9e5c2; font-size: 10px; letter-spacing: 0; cursor: pointer; }
+.docs-code figcaption button:hover, .docs-code figcaption button:focus-visible { color: #172a1d; background: #b7f36d; }
 .docs-code pre { margin: 0; padding: 16px; overflow-x: auto; color: #e2f1e2; font-size: 12.5px; line-height: 1.65; tab-size: 4; }
 .docs-code pre code { font-size: inherit; }
+.docs-outline { position: sticky; z-index: 9; top: 0; border-block: 1px solid #dce6d7; background: rgba(246, 247, 241, .96); backdrop-filter: blur(14px); }
+.docs-outline-inner { display: flex; align-items: center; gap: 7px; min-height: 54px; overflow-x: auto; white-space: nowrap; }
+.docs-outline-inner > span { margin-right: 14px; color: #67806b; font-size: 10px; font-weight: 800; letter-spacing: .12em; }
+.docs-outline a { padding: 9px 13px; border-radius: 6px; color: #526758; font-size: 12px; font-weight: 700; }
+.docs-outline a:hover, .docs-outline a:focus-visible, .docs-outline a[aria-current="location"] { color: #1a3924; background: #dff0d4; }
+.docs-section, .docs-sub { scroll-margin-top: 60px; }
+.docs-language-tabs { display: none; }
 
 .docs-sub { margin-top: 56px; }
 .docs-sub h3 { margin: 0 0 10px; color: #1a3022; font-size: 25px; letter-spacing: -.04em; }
@@ -52,11 +63,18 @@
 .docs-notes strong { display: block; margin-bottom: 6px; color: #eef9ea; font-size: 14px; }
 
 @media (max-width: 1000px) {
-  .docs-pair, .docs-receive-grid, .docs-notes { grid-template-columns: 1fr; }
+  .docs-pair, .docs-receive-grid, .docs-notes { grid-template-columns: minmax(0, 1fr); }
   .docs-facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (max-width: 650px) {
   .docs-hero { padding-block: 48px 60px; }
   .docs-facts { grid-template-columns: 1fr; }
   .docs-code pre { font-size: 12px; }
+  .docs-outline-inner > span { display: none; }
+  .docs-language-tabs { display: flex; grid-column: 1 / -1; gap: 6px; margin-top: 4px; }
+  .docs-language-tabs button { padding: 9px 14px; border: 1px solid #cfdccc; border-radius: 7px; color: #35543b; background: #f4f8f1; font-size: 12px; font-weight: 700; cursor: pointer; }
+  .docs-language-tabs button[aria-pressed="true"] { border-color: #2e6138; color: #fff; background: #285634; }
+  .docs-language-tabs button:focus-visible { outline: 3px solid #77b84f; outline-offset: 2px; }
+  .docs-pair-panel { display: none; }
+  .docs-pair-panel.is-selected { display: block; }
 }

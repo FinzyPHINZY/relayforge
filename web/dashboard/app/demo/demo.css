@@ -25,7 +25,7 @@
 .demo-stage-icon.is-failed { border-color: #a96d64; color: #ffb4a8; background: #54352f; }
 .demo-stage-icon.is-success { border-color: #6caa65; color: #c6ffad; }
 .demo-stage h2 { margin: 23px 0 10px; font-size: clamp(30px, 3vw, 43px); letter-spacing: -.05em; }
-.demo-stage > p { max-width: 620px; min-height: 76px; margin: 0; color: #b2c5b5; font-size: 14px; line-height: 1.75; }
+.demo-stage-content > p { max-width: 620px; min-height: 76px; margin: 0; color: #b2c5b5; font-size: 14px; line-height: 1.75; }
 .demo-terminal { margin-top: 25px; overflow: hidden; border: 1px solid #3c5945; border-radius: 9px; background: #0c1a13; }
 .demo-terminal > div { display: flex; align-items: center; gap: 5px; padding: 11px 15px; border-bottom: 1px solid #294132; }
 .demo-terminal > div span { width: 6px; height: 6px; border-radius: 50%; background: #56725c; }
