@@ -19,10 +19,11 @@ func TestSignInHTML(t *testing.T) {
 	}
 	for _, want := range []string{
 		"15 minutes",
-		"Your secure sign-in link — expires in 15 minutes.",
+		"Your secure sign-in link. Expires in 15 minutes.",
 		"Sign in to RelayForge",
 		"This link expires in 15 minutes and works once.",
-		"Didn't ask for this? You can ignore this email — no one can sign in without it.",
+		"Click below to open your console. No password needed.",
+		"Didn't ask for this? You can ignore this email. No one can sign in without it.",
 		"RelayForge · relayforge.site",
 		`lang="en"`,
 		`<meta name="color-scheme" content="light only">`,
@@ -40,9 +41,28 @@ func TestSignInHTML(t *testing.T) {
 	}
 }
 
+func TestSignInHasNoDashes(t *testing.T) {
+	m := SignInMessage("bo@example.com", "https://app.relayforge.site/auth/email?token=rfm_abc")
+	for _, d := range []string{"\u2014", "\u2013"} {
+		if strings.Contains(m.HTML, d) || strings.Contains(m.Text, d) || strings.Contains(m.Subject, d) {
+			t.Fatalf("message contains dash %q", d)
+		}
+	}
+}
+
 func TestSignInHTMLEscapesLink(t *testing.T) {
 	m := SignInMessage("bo@example.com", `https://x.test/?t="><script>alert(1)</script>`)
 	if strings.Contains(m.HTML, "<script>") {
 		t.Fatal("html contains an unescaped script tag")
+	}
+	if !strings.Contains(m.HTML, `href="https://x.test/?t=%22%3e%3cscript%3ealert%281%29%3c/script%3e"`) {
+		t.Fatal("hostile link quote not encoded in href")
+	}
+	js := SignInMessage("bo@example.com", "javascript:alert(1)")
+	if strings.Contains(js.HTML, `href="javascript:`) {
+		t.Fatal("javascript: url rendered in href")
+	}
+	if !strings.Contains(js.HTML, `href="#ZgotmplZ"`) {
+		t.Fatal("javascript: url was not neutralised to #ZgotmplZ")
 	}
 }
