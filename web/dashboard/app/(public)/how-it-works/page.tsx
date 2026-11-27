@@ -45,6 +45,10 @@ const controls = [
 
 export default function HowItWorksPage() {
   return <div className="landing workings">
+    <nav className="workings-outline" aria-label="On this page"><div className="landing-container workings-outline-inner">
+      <span>ON THIS PAGE</span><a href="#pipeline">Pipeline</a><a href="#crash-window">Crash window</a><a href="#proof">Measured proof</a><a href="#controls">Controls</a>
+    </div></nav>
+
     <main>
       <section className="landing-container workings-hero" aria-labelledby="workings-title">
         <div className="workings-hero-copy"><Link href="/" className="workings-back"><ArrowLeft size={15} aria-hidden="true" /> Back to RelayForge</Link><span className="landing-kicker">INSIDE THE DELIVERY ENGINE</span><h1 id="workings-title">A webhook is a journey.<br /><span>Every step should have a record.</span></h1><p>RelayForge accepts an event, commits it durably, delivers a signed request, and keeps the outcome inspectable. Here is what happens when the path is smooth—and when it is not.</p><div className="workings-hero-actions"><a href="#pipeline" className="landing-button landing-button-primary">Trace the delivery path <ArrowRight size={17} aria-hidden="true" /></a><Link href="/demo" className="landing-button landing-button-secondary">Try the guided demo <ArrowUpRight size={17} aria-hidden="true" /></Link></div></div>
