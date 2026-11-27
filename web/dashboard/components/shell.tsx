@@ -1,56 +1,56 @@
-import { ArrowUpRight, Webhook } from "lucide-react";
-import { signOut } from "@/app/actions";
+import { Webhook } from "lucide-react";
+import { AccountMenu } from "@/components/account-menu";
 import { ConsoleNav } from "@/components/console-nav";
-import { Button } from "@/components/ui/button";
-import { WorkspaceSwitcher } from "@/components/workspace-switcher";
 import { fetchAccount, type Workspace } from "@/lib/account";
 import { fetchPrincipal } from "@/lib/api";
 import { getSession } from "@/lib/session";
 
-type ShellContext = { scopes: string[]; user: { workspaces: Workspace[]; currentId: string | null } | null };
+type ShellContext = { kind: "user" | "key" | null; scopes: string[]; workspaces: Workspace[]; currentId: string | null };
 
 async function loadShellContext(): Promise<ShellContext> {
   const session = await getSession();
-  if (!session) return { scopes: [], user: null };
+  if (!session) return { kind: null, scopes: [], workspaces: [], currentId: null };
   const needsOrg = session.kind === "user" && !session.org;
   const [me, account] = await Promise.all([
     needsOrg ? null : fetchPrincipal(session).catch(() => null),
     session.kind === "user" ? fetchAccount(session.token).catch(() => null) : null,
   ]);
   return {
+    kind: session.kind,
     scopes: me?.scopes ?? [],
-    user: session.kind === "user" ? { workspaces: account?.workspaces ?? [], currentId: session.org } : null,
+    workspaces: account?.workspaces ?? [],
+    currentId: session.kind === "user" ? session.org : null,
   };
 }
 
 export async function Shell({ children }: { children: React.ReactNode }) {
   const context = await loadShellContext();
+  // below lg the sidebar is a top bar: brand and account card on one row, the nav under them.
   return <div className="console-theme min-h-screen bg-[#f6f7f1] lg:flex">
-    <aside className="console-sidebar border-b border-white/10 bg-[#14281e] lg:sticky lg:top-0 lg:flex lg:h-screen lg:w-64 lg:flex-col lg:border-b-0 lg:border-r">
-      <div className="flex items-center gap-3 border-b border-white/10 px-6 py-6">
-        <div className="flex size-10 -rotate-6 items-center justify-center rounded-xl bg-[#b7f36d] text-[#173322]"><Webhook size={22} strokeWidth={2.3} /></div>
-        <div><div className="text-base font-bold tracking-tight text-white">relayforge<span className="text-[#b7f36d]">.</span></div><div className="text-xs text-slate-500">Operator console</div></div>
+    <aside className="console-sidebar flex flex-wrap items-center border-b border-white/10 bg-[#14281e] lg:sticky lg:top-0 lg:h-screen lg:w-64 lg:flex-col lg:flex-nowrap lg:items-stretch lg:border-b-0 lg:border-r">
+      <div className="order-1 flex min-w-0 flex-1 items-center gap-3 px-5 py-4 lg:order-none lg:flex-none lg:border-b lg:border-white/10 lg:px-6 lg:py-6">
+        <div className="flex size-10 shrink-0 -rotate-6 items-center justify-center rounded-xl bg-[#b7f36d] text-[#173322]"><Webhook size={22} strokeWidth={2.3} /></div>
+        <div className="text-base font-bold tracking-tight text-white">relayforge<span className="text-[#b7f36d]">.</span></div>
       </div>
-      {context.user ? <WorkspaceSwitcher workspaces={context.user.workspaces} currentId={context.user.currentId} /> : null}
-      <ConsoleNav showKeys={context.scopes.includes("keys:read")} showAccount={Boolean(context.user)} />
-      <div className="hidden flex-1 lg:block" />
-      <div className="hidden border-t border-white/10 p-4 lg:block">
-        <div className="mb-4 rounded-xl border border-[#679969]/30 bg-[#b7f36d]/5 p-3 text-xs leading-5 text-slate-400">Delivery attempts are at least once. Receivers should deduplicate by <code className="text-emerald-300">webhook-id</code>.</div>
-        <form action={signOut}><Button variant="ghost" className="w-full justify-between">Sign out <ArrowUpRight size={15} /></Button></form>
+      <div className="order-3 w-full min-w-0 border-t border-white/10 lg:order-none lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:border-t-0">
+        <ConsoleNav showKeys={context.scopes.includes("keys:read")} showAccount={context.kind === "user"} />
       </div>
+      {context.kind ? <div className="order-2 min-w-0 shrink-0 pr-4 lg:order-none lg:border-t lg:border-white/10 lg:p-3">
+        <AccountMenu kind={context.kind} workspaces={context.workspaces} currentId={context.currentId} />
+      </div> : null}
     </aside>
     <div className="min-w-0 flex-1">
       <header className="flex items-center justify-between border-b border-[#dfe5db] bg-[#f9faf6] px-5 py-4 lg:px-10">
         <div className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">Delivery operations</div>
-        <div className="flex items-center gap-3"><span className="flex items-center gap-2 text-xs text-slate-400"><span className="size-2 rounded-full bg-emerald-400" /> Live data</span><form action={signOut} className="lg:hidden"><Button variant="ghost" size="sm">Sign out</Button></form></div>
+        <span className="flex items-center gap-2 text-xs text-slate-400"><span className="size-2 rounded-full bg-emerald-400" /> Live data</span>
       </header>
       <main className="mx-auto max-w-7xl px-5 py-8 lg:px-10 lg:py-10">{children}</main>
     </div>
   </div>;
 }
 
-export function PageTitle({ eyebrow, title, description, action }: { eyebrow: string; title: string; description: string; action?: React.ReactNode }) {
-  return <div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400">{eyebrow}</p><h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{title}</h1><p className="mt-2 text-sm text-slate-400">{description}</p></div>{action}</div>;
+export function PageTitle({ eyebrow, title, description, note, action }: { eyebrow: string; title: string; description: string; note?: React.ReactNode; action?: React.ReactNode }) {
+  return <div className="mb-8 flex flex-wrap items-end justify-between gap-4"><div><p className="mb-2 text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400">{eyebrow}</p><h1 className="text-3xl font-semibold tracking-tight text-white sm:text-4xl">{title}</h1><p className="mt-2 text-sm text-slate-400">{description}</p>{note ? <p className="mt-3 inline-block rounded-lg border border-[#cfe0c6] bg-[#eef5e6] px-3 py-2 text-xs leading-5 text-slate-500">{note}</p> : null}</div>{action}</div>;
 }
 
 export function EmptyState({ title, description }: { title: string; description: string }) {

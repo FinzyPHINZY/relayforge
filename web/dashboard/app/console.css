@@ -55,8 +55,11 @@
   .rf-sheet[data-side="right"][data-state="closed"] { animation-name: rf-sheet-right-out; }
 }
 
+/* account menu */
+.rf-menu[data-state="open"] { animation: rf-sheet-fade-in 120ms ease-out; }
+
 @media (prefers-reduced-motion: reduce) {
-  .rf-sheet, .rf-sheet-overlay { animation: none !important; }
+  .rf-sheet, .rf-sheet-overlay, .rf-menu { animation: none !important; }
 }
 
 @keyframes rf-sheet-fade-in { from { opacity: 0; } }
