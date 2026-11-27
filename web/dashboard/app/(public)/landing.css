@@ -21,6 +21,7 @@
 .landing-nav { display: flex; align-items: center; gap: 37px; margin-left: auto; margin-right: 30px; }
 .landing-nav a { display: inline-flex; align-items: center; gap: 4px; color: #58665d; font-size: 13px; font-weight: 600; transition: color .2s; }
 .landing-nav a:hover, .landing-nav a:focus-visible { color: #1d552b; }
+.landing-nav a[aria-current="page"] { color: #1d552b; box-shadow: 0 2px 0 #79ad3f; }
 .landing-header-cta { display: inline-flex; align-items: center; justify-content: center; gap: 14px; min-height: 43px; padding: 0 18px; border: 1px solid #1a3429; border-radius: 8px; color: white; background: #172b22; font-size: 13px; font-weight: 700; white-space: nowrap; transition: transform .2s, background .2s; }
 .landing-header-cta:hover { transform: translateY(-2px); background: #28523a; }
 

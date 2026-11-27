@@ -27,7 +27,6 @@ import {
   Terminal,
   Webhook,
 } from "lucide-react";
-import "./landing.css";
 
 export const metadata: Metadata = {
   title: "RelayForge — Webhooks built to make it through",
@@ -121,21 +120,6 @@ function Brand({ light = false }: { light?: boolean }) {
 export default function LandingPage() {
   return (
     <div className="landing">
-      <header className="landing-header">
-        <div className="landing-container landing-header-inner">
-          <Brand />
-          <nav className="landing-nav" aria-label="Main navigation">
-            <Link href="/demo">Guided demo</Link>
-            <Link href="/how-it-works">How it works</Link>
-            <Link href="/docs">SDK docs</Link>
-            <a href="#use-cases">Use cases</a>
-            <a href="#capabilities">Capabilities</a>
-            <a href="https://github.com/FinzyPHINZY/relayforge" target="_blank" rel="noopener noreferrer">GitHub <ArrowUpRight size={14} aria-hidden="true" /></a>
-          </nav>
-          <Link href="/dashboard" className="landing-header-cta">Open console <ArrowUpRight size={16} aria-hidden="true" /></Link>
-        </div>
-      </header>
-
       <main>
         <section className="landing-hero landing-container" aria-labelledby="landing-heading">
           <div className="landing-hero-copy">

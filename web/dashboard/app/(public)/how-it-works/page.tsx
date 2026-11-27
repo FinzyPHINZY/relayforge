@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   Webhook,
 } from "lucide-react";
-import "../landing.css";
 import "./works.css";
 
 export const metadata: Metadata = {
@@ -46,12 +45,6 @@ const controls = [
 
 export default function HowItWorksPage() {
   return <div className="landing workings">
-    <header className="landing-header"><div className="landing-container landing-header-inner">
-      <Link href="/" className="landing-brand" aria-label="RelayForge home"><span className="landing-brand-mark"><Webhook size={21} aria-hidden="true" /></span><span>relayforge<span className="landing-brand-period">.</span></span></Link>
-      <nav className="workings-nav" aria-label="Page navigation"><a href="#pipeline">Pipeline</a><a href="#crash-window">Crash window</a><a href="#proof">Measured proof</a><a href="#controls">Controls</a></nav>
-      <Link href="/demo" className="landing-header-cta">Guided demo <ArrowUpRight size={16} aria-hidden="true" /></Link>
-    </div></header>
-
     <main>
       <section className="landing-container workings-hero" aria-labelledby="workings-title">
         <div className="workings-hero-copy"><Link href="/" className="workings-back"><ArrowLeft size={15} aria-hidden="true" /> Back to RelayForge</Link><span className="landing-kicker">INSIDE THE DELIVERY ENGINE</span><h1 id="workings-title">A webhook is a journey.<br /><span>Every step should have a record.</span></h1><p>RelayForge accepts an event, commits it durably, delivers a signed request, and keeps the outcome inspectable. Here is what happens when the path is smooth—and when it is not.</p><div className="workings-hero-actions"><a href="#pipeline" className="landing-button landing-button-primary">Trace the delivery path <ArrowRight size={17} aria-hidden="true" /></a><Link href="/demo" className="landing-button landing-button-secondary">Try the guided demo <ArrowUpRight size={17} aria-hidden="true" /></Link></div></div>
