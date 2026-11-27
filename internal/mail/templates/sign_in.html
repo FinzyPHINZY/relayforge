@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="X-UA-Compatible" content="IE=edge">
+<meta name="color-scheme" content="light only">
+<meta name="supported-color-schemes" content="light only">
+<meta name="x-apple-disable-message-reformatting">
+<title>Sign in to RelayForge</title>
+<style>
+  :root { color-scheme: light only; supported-color-schemes: light only; }
+  body { margin: 0 !important; padding: 0 !important; width: 100% !important; }
+  a { text-decoration: none; }
+  @media only screen and (max-width: 480px) {
+    .rf-outer { padding: 20px 12px !important; }
+    .rf-pad { padding-left: 24px !important; padding-right: 24px !important; }
+    .rf-head { padding: 22px 24px !important; }
+    .rf-h1 { font-size: 24px !important; line-height: 32px !important; }
+    .rf-btn-table { width: 100% !important; }
+    .rf-btn-link { display: block !important; text-align: center !important; }
+  }
+</style>
+</head>
+<body style="margin:0;padding:0;background-color:#f6f7f1;color:#152721;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;" bgcolor="#f6f7f1">
+<div style="display:none;font-size:1px;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden;mso-hide:all;color:#f6f7f1;">Your secure sign-in link — expires in {{.ExpiresMinutes}} minutes.&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;&#8204;&nbsp;</div>
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" bgcolor="#f6f7f1" style="background-color:#f6f7f1;">
+  <tr>
+    <td class="rf-outer" align="center" bgcolor="#f6f7f1" style="padding:48px 16px;background-color:#f6f7f1;">
+      {{msoOpen}}
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;width:100%;border-collapse:separate;background-color:#ffffff;border:1px solid #dfe5db;border-radius:16px;" bgcolor="#ffffff">
+        <tr>
+          <td class="rf-head" bgcolor="#14281e" style="padding:26px 40px;background-color:#14281e;border-radius:15px 15px 0 0;">
+            <table role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td width="26" height="26" bgcolor="#b7f36d" style="width:26px;height:26px;background-color:#b7f36d;border-radius:7px;font-size:0;line-height:0;">&nbsp;</td>
+                <td bgcolor="#14281e" style="padding-left:12px;background-color:#14281e;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:19px;line-height:26px;font-weight:700;letter-spacing:-0.3px;color:#b7f36d;">relayforge.</td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td height="6" bgcolor="#b7f36d" style="height:6px;background-color:#b7f36d;font-size:0;line-height:0;">&nbsp;</td>
+        </tr>
+        <tr>
+          <td class="rf-pad" bgcolor="#ffffff" style="padding:44px 40px 8px 40px;background-color:#ffffff;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;color:#152721;">
+            <p style="margin:0 0 12px 0;font-size:12px;line-height:16px;font-weight:600;letter-spacing:1.4px;text-transform:uppercase;color:#5d6b64;">Secure sign-in</p>
+            <h1 class="rf-h1" style="margin:0 0 14px 0;font-size:28px;line-height:36px;font-weight:700;letter-spacing:-0.6px;color:#152721;">Sign in to RelayForge</h1>
+            <p style="margin:0 0 32px 0;font-size:16px;line-height:26px;color:#152721;">Click below to open your console — no password needed.</p>
+            <table class="rf-btn-table" role="presentation" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td align="center" bgcolor="#b7f36d" style="background-color:#b7f36d;border-radius:12px;">
+                  <a class="rf-btn-link" href="{{.Link}}" target="_blank" style="display:inline-block;padding:16px 40px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:16px;line-height:20px;font-weight:700;color:#14251e;text-decoration:none;border-radius:12px;">Sign in</a>
+                </td>
+              </tr>
+            </table>
+            <p style="margin:18px 0 0 0;font-size:14px;line-height:22px;color:#5d6b64;">This link expires in {{.ExpiresMinutes}} minutes and works once.</p>
+          </td>
+        </tr>
+        <tr>
+          <td class="rf-pad" bgcolor="#ffffff" style="padding:32px 40px 40px 40px;background-color:#ffffff;">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+              <tr>
+                <td bgcolor="#f6f7f1" style="padding:16px 18px;background-color:#f6f7f1;border:1px solid #dfe5db;border-radius:10px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+                  <p style="margin:0 0 6px 0;font-size:13px;line-height:20px;color:#5d6b64;">Button not working? Paste this link into your browser:</p>
+                  <p style="margin:0;font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;font-size:12px;line-height:19px;color:#152721;word-break:break-all;overflow-wrap:anywhere;">{{.Link}}</p>
+                </td>
+              </tr>
+            </table>
+          </td>
+        </tr>
+        <tr>
+          <td class="rf-pad" bgcolor="#ffffff" style="padding:24px 40px 32px 40px;background-color:#ffffff;border-top:1px solid #dfe5db;border-radius:0 0 15px 15px;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+            <p style="margin:0 0 14px 0;font-size:13px;line-height:20px;color:#5d6b64;">Didn't ask for this? You can ignore this email — no one can sign in without it.</p>
+            <p style="margin:0;font-size:12px;line-height:18px;color:#5d6b64;"><span style="color:#152721;font-weight:600;">RelayForge · relayforge.site</span>&nbsp;&nbsp;&copy; {{.Year}}</p>
+          </td>
+        </tr>
+      </table>
+      {{msoClose}}
+    </td>
+  </tr>
+</table>
+</body>
+</html>

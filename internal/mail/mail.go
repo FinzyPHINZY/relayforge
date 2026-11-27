@@ -9,7 +9,8 @@ import (
 
 const maxSent = 100
 
-type Message struct{ To, Subject, Text string }
+// Message is an outgoing email; HTML is optional and never logged.
+type Message struct{ To, Subject, Text, HTML string }
 
 type Mailer interface {
 	Send(ctx context.Context, m Message) error
@@ -50,9 +51,4 @@ func recipientDomain(to string) string {
 		return to[i+1:]
 	}
 	return ""
-}
-
-func SignInMessage(to, link string) Message {
-	return Message{To: to, Subject: "Your RelayForge sign-in link", Text: "Use this link to sign in to RelayForge:\n\n" + link +
-		"\n\nThe link expires in 15 minutes and can be used once.\n\nIf you didn't ask for this, ignore this email.\n"}
 }
