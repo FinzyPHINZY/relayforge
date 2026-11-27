@@ -1,34 +1,38 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { usePathname } from "next/navigation";
+import type Lenis from "lenis";
+import { scrollTargetFor } from "@/lib/public-nav";
 import "lenis/dist/lenis.css";
 
-const publicPages = new Set([
-  "/",
-  "/docs",
-  "/how-it-works",
-  "/demo",
-  "/login",
-  "/welcome",
-  "/auth/email",
-  "/auth/check-email",
-]);
+function settle(lenis: Lenis, fromHistory: boolean) {
+  const target = scrollTargetFor(window.location.href);
+  if (target !== "top") {
+    if (document.getElementById(target.slice(1))) lenis.scrollTo(target);
+    return;
+  }
+  // back/forward keeps the position the browser restored; lenis just needs to pick it up.
+  if (fromHistory) lenis.resize();
+  else lenis.scrollTo(0, { immediate: true });
+}
 
-/** Keep the public pages on one scroll behavior without changing the console. */
+/** One Lenis instance for the public pages; it follows route changes instead of being recreated. */
 export function PublicSmoothScroll() {
   const pathname = usePathname();
+  const lenisRef = useRef<Lenis | null>(null);
+  const fromHistory = useRef(false);
+  const firstPath = useRef(true);
 
   useEffect(() => {
-    if (!publicPages.has(pathname)) return;
-
-    let instance: { destroy: () => void; scrollTo: (target: string) => void } | undefined;
     let cancelled = false;
     let frame = 0;
+    const onPopState = () => { fromHistory.current = true; };
+    window.addEventListener("popstate", onPopState);
 
-    import("lenis").then(({ default: Lenis }) => {
+    import("lenis").then(({ default: LenisClass }) => {
       if (cancelled) return;
-      instance = new Lenis({
+      const lenis = new LenisClass({
         autoRaf: true,
         anchors: true,
         lerp: 0.075,
@@ -36,22 +40,28 @@ export function PublicSmoothScroll() {
         syncTouch: true,
         stopInertiaOnNavigate: true,
       });
-
-      // Next.js handles route changes, while Lenis handles the destination hash.
-      if (window.location.hash) {
-        frame = window.requestAnimationFrame(() => {
-          let hash = window.location.hash;
-          try { hash = decodeURIComponent(hash); } catch { return; }
-          if (document.getElementById(hash.slice(1))) instance?.scrollTo(hash);
-        });
-      }
+      lenisRef.current = lenis;
+      // a fresh deep link: next has already jumped natively, lenis lines up with the target.
+      if (window.location.hash) frame = window.requestAnimationFrame(() => settle(lenis, true));
     });
 
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
-      instance?.destroy();
+      window.removeEventListener("popstate", onPopState);
+      lenisRef.current?.destroy();
+      lenisRef.current = null;
     };
+  }, []);
+
+  useEffect(() => {
+    if (firstPath.current) { firstPath.current = false; return; }
+    const lenis = lenisRef.current;
+    const historyMove = fromHistory.current;
+    fromHistory.current = false;
+    if (!lenis) return;
+    const frame = window.requestAnimationFrame(() => settle(lenis, historyMove));
+    return () => window.cancelAnimationFrame(frame);
   }, [pathname]);
 
   return null;
