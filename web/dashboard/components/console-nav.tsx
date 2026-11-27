@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Activity, Boxes, ChartNoAxesCombined, CircleAlert, CircleUserRound, KeyRound, RadioTower, UsersRound, Workflow, type LucideIcon } from "lucide-react";
+import { Activity, Boxes, ChartNoAxesCombined, CircleAlert, KeyRound, RadioTower, UsersRound, Workflow, type LucideIcon } from "lucide-react";
 
-type Item = { href: string; label: string; icon: LucideIcon; show?: "keys" | "account" };
+type Item = { href: string; label: string; icon: LucideIcon; show?: "keys" };
 
 const navigation: Item[] = [
   { href: "/dashboard", label: "Overview", icon: Activity },
@@ -15,12 +15,11 @@ const navigation: Item[] = [
   { href: "/analytics", label: "Analytics", icon: ChartNoAxesCombined },
   { href: "/team", label: "Team", icon: UsersRound },
   { href: "/keys", label: "API keys", icon: KeyRound, show: "keys" },
-  { href: "/account", label: "Account", icon: CircleUserRound, show: "account" },
 ];
 
-export function ConsoleNav({ showKeys = false, showAccount = false }: { showKeys?: boolean; showAccount?: boolean }) {
+export function ConsoleNav({ showKeys = false }: { showKeys?: boolean }) {
   const pathname = usePathname();
-  const items = navigation.filter((item) => !item.show || (item.show === "keys" ? showKeys : showAccount));
+  const items = navigation.filter((item) => !item.show || showKeys);
   return <nav aria-label="Main navigation" className="flex gap-1 overflow-x-auto px-3 py-3 lg:flex-col lg:gap-1 lg:py-6">
     {items.map(({ href, label, icon: Icon }) => {
       const active = pathname === href || pathname.startsWith(`${href}/`);

@@ -33,11 +33,20 @@ function Tile({ name, active = false, icon }: { name: string; active?: boolean; 
 
 const itemClass = "flex w-full cursor-pointer select-none items-center gap-3 rounded-lg px-2 py-2 text-left text-sm text-slate-300 outline-none transition-colors data-[highlighted]:bg-white/8 data-[highlighted]:text-white";
 
-function TriggerIndicator() {
+// rendered inside the switch form so it can read that form's pending state.
+function SwitchTrigger({ label, title, subtitle, tile }: { label: string; title: string; subtitle: string; tile: React.ReactNode }) {
   const { pending } = useFormStatus();
-  return pending
-    ? <LoaderCircle size={16} aria-label="Switching workspace" className="shrink-0 animate-spin text-slate-400" />
-    : <ChevronUp size={16} aria-hidden="true" className="shrink-0 text-slate-400 max-lg:rotate-180" />;
+  return <Menu.Trigger disabled={pending} aria-busy={pending || undefined} aria-label={pending ? "Switching workspace…" : label} className="group flex w-full min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-1.5 text-left transition-colors hover:bg-white/8 disabled:cursor-progress disabled:opacity-70 data-[state=open]:bg-white/8 min-[400px]:pr-3 lg:px-3 lg:py-2.5">
+    {tile}
+    <span className="hidden min-w-0 flex-1 min-[400px]:block">
+      <span className="block max-w-32 truncate text-sm font-semibold text-white lg:max-w-none">{title}</span>
+      {subtitle ? <span className="hidden truncate text-xs text-slate-500 lg:block">{subtitle}</span> : null}
+    </span>
+    {pending
+      ? <LoaderCircle size={16} aria-hidden="true" className="shrink-0 animate-spin text-slate-400" />
+      : <ChevronUp size={16} aria-hidden="true" className="shrink-0 text-slate-400 max-lg:rotate-180" />}
+    <span className="sr-only" aria-live="polite">{pending ? "Switching workspace…" : ""}</span>
+  </Menu.Trigger>;
 }
 
 export function AccountMenu({ kind, workspaces, currentId }: { kind: "user" | "key"; workspaces: Workspace[]; currentId: string | null }) {
@@ -46,7 +55,6 @@ export function AccountMenu({ kind, workspaces, currentId }: { kind: "user" | "k
   const switchForm = useRef<HTMLFormElement>(null);
   const orgInput = useRef<HTMLInputElement>(null);
   const signOutForm = useRef<HTMLFormElement>(null);
-  const hasCurrent = kind === "user" && workspaces.some((w) => w.id.toLowerCase() === currentId?.toLowerCase());
   const hasTopSection = model.others.length > 0 || model.showNewWorkspace;
 
   // the forms live outside the menu so closing it never unmounts them mid-submit.
@@ -59,14 +67,12 @@ export function AccountMenu({ kind, workspaces, currentId }: { kind: "user" | "k
   return <Menu.Root>
     <form ref={switchForm} action={switchWorkspace} className="min-w-0">
       <input ref={orgInput} type="hidden" name="org" defaultValue="" />
-      <Menu.Trigger aria-label={kind === "key" ? "API key session menu" : `Workspace and account menu: ${model.title}`} className="group flex w-full min-w-0 items-center gap-3 rounded-xl border border-white/10 bg-white/5 p-1.5 text-left transition-colors hover:bg-white/8 data-[state=open]:bg-white/8 min-[400px]:pr-3 lg:px-3 lg:py-2.5">
-        <Tile name={hasCurrent ? model.title : "?"} active={hasCurrent} icon={kind === "key" ? <KeyRound size={15} /> : undefined} />
-        <span className="hidden min-w-0 flex-1 min-[400px]:block">
-          <span className="block max-w-32 truncate text-sm font-semibold text-white lg:max-w-none">{model.title}</span>
-          {model.subtitle ? <span className="hidden truncate text-xs text-slate-500 lg:block">{model.subtitle}</span> : null}
-        </span>
-        <TriggerIndicator />
-      </Menu.Trigger>
+      <SwitchTrigger
+        label={kind === "key" ? "API key session menu" : `Workspace and account menu: ${model.title}`}
+        title={model.title}
+        subtitle={model.subtitle}
+        tile={<Tile name={model.current ? model.title : "?"} active={Boolean(model.current)} icon={kind === "key" ? <KeyRound size={15} /> : undefined} />}
+      />
     </form>
     <form ref={signOutForm} action={signOut} hidden />
     <Menu.Portal>

@@ -8,6 +8,7 @@ const c = { id: "9d2e9a0a-3b5c-4e77-9c65-2e5f9d3d4c32", name: "Gamma", role: "vi
 
 test("a user sees the current workspace with its role and plan, and the rest to switch to", () => {
   const model = accountMenuModel({ kind: "user", workspaces: [a, b, c], currentId: a.id });
+  assert.equal(model.current, a);
   assert.equal(model.title, "Acme");
   assert.equal(model.subtitle, "Owner · Free");
   assert.deepEqual(model.others, [b, c]);
@@ -17,9 +18,17 @@ test("a user sees the current workspace with its role and plan, and the rest to 
 
 test("the current workspace matches regardless of id case", () => {
   const model = accountMenuModel({ kind: "user", workspaces: [a, b], currentId: b.id.toUpperCase() });
+  assert.equal(model.current, b);
   assert.equal(model.title, "Beta");
   assert.equal(model.subtitle, "Operator · Pro");
   assert.deepEqual(model.others, [a]);
+});
+
+test("a current id that is not one of the user's workspaces counts as none", () => {
+  const model = accountMenuModel({ kind: "user", workspaces: [a, b], currentId: c.id });
+  assert.equal(model.current, null);
+  assert.equal(model.title, "Choose a workspace");
+  assert.deepEqual(model.others, [a, b]);
 });
 
 test("a user with one workspace has nothing to switch to", () => {
@@ -31,6 +40,7 @@ test("a user with one workspace has nothing to switch to", () => {
 
 test("a user without a current workspace is asked to choose one from all", () => {
   const model = accountMenuModel({ kind: "user", workspaces: [a, b, c], currentId: null });
+  assert.equal(model.current, null);
   assert.equal(model.title, "Choose a workspace");
   assert.equal(model.subtitle, "");
   assert.deepEqual(model.others, [a, b, c]);
@@ -38,6 +48,7 @@ test("a user without a current workspace is asked to choose one from all", () =>
 
 test("an api key session only offers sign out", () => {
   const model = accountMenuModel({ kind: "key", workspaces: [a, b], currentId: a.id });
+  assert.equal(model.current, null);
   assert.equal(model.title, "API key session");
   assert.equal(model.subtitle, "");
   assert.deepEqual(model.others, []);

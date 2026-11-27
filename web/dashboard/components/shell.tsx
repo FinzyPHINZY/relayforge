@@ -33,7 +33,7 @@ export async function Shell({ children }: { children: React.ReactNode }) {
         <div className="text-base font-bold tracking-tight text-white">relayforge<span className="text-[#b7f36d]">.</span></div>
       </div>
       <div className="order-3 w-full min-w-0 border-t border-white/10 lg:order-none lg:min-h-0 lg:flex-1 lg:overflow-y-auto lg:border-t-0">
-        <ConsoleNav showKeys={context.scopes.includes("keys:read")} showAccount={context.kind === "user"} />
+        <ConsoleNav showKeys={context.scopes.includes("keys:read")} />
       </div>
       {context.kind ? <div className="order-2 min-w-0 shrink-0 pr-4 lg:order-none lg:border-t lg:border-white/10 lg:p-3">
         <AccountMenu kind={context.kind} workspaces={context.workspaces} currentId={context.currentId} />
