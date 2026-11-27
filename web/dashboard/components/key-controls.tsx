@@ -1,10 +1,11 @@
 "use client";
 
 import { useActionState, useState } from "react";
-import { Check, Copy, TriangleAlert } from "lucide-react";
+import { Check, Copy, Plus, TriangleAlert } from "lucide-react";
 import { createKeyControl, revokeKeyControl, type ControlState } from "@/app/console-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { allowedRoles, expiryChoices, offeredScopes, type Role } from "@/lib/key-form";
 
 const initial: ControlState = {};
@@ -51,6 +52,20 @@ export function CreateKeyForm({ myRole, myScopes }: { myRole: string; myScopes: 
   </div>;
 }
 
+// the sheet's content unmounts on close, taking the form state and any one-time secret with it.
+export function CreateKeySheet({ myRole, myScopes }: { myRole: string; myScopes: string[] }) {
+  return <Sheet>
+    <SheetTrigger asChild><Button type="button"><Plus size={16} aria-hidden="true" />Create key</Button></SheetTrigger>
+    <SheetContent side="right" onOpenAutoFocus={(event) => {
+      const name = document.getElementById("keyName");
+      if (name) { event.preventDefault(); name.focus(); }
+    }}>
+      <SheetHeader><SheetTitle>Create a key</SheetTitle><SheetDescription>The key is shown once. Store it in your secret manager.</SheetDescription></SheetHeader>
+      <CreateKeyForm myRole={myRole} myScopes={myScopes} />
+    </SheetContent>
+  </Sheet>;
+}
+
 function KeyFields({ myRole, myScopes, action, pending, error }: { myRole: string; myScopes: string[]; action: (form: FormData) => void; pending: boolean; error?: string }) {
   const roles = allowedRoles(myRole);
   const [role, setRole] = useState<Role>(roles[roles.length - 1] ?? "viewer");
@@ -72,14 +87,14 @@ function KeyFields({ myRole, myScopes, action, pending, error }: { myRole: strin
   }
 
   return <form action={action} className="grid gap-5">
-      <div className="grid gap-4 md:grid-cols-3">
-        <div><label htmlFor="keyName" className="mb-2 block text-xs text-slate-300">Name</label><Input id="keyName" name="name" required maxLength={80} placeholder="CI deploys" autoComplete="off" /></div>
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2"><label htmlFor="keyName" className="mb-2 block text-xs text-slate-300">Name</label><Input id="keyName" name="name" required maxLength={80} placeholder="CI deploys" autoComplete="off" /></div>
         <div><label htmlFor="keyRole" className="mb-2 block text-xs text-slate-300">Role</label><select id="keyRole" name="role" value={role} onChange={(event) => changeRole(event.target.value as Role)} className={`${selectClass} capitalize`}>{roles.map((item) => <option key={item} value={item}>{item[0].toUpperCase() + item.slice(1)}</option>)}</select></div>
         <div><label htmlFor="keyExpiry" className="mb-2 block text-xs text-slate-300">Expires</label><select id="keyExpiry" name="expiry" defaultValue="90" className={selectClass}>{expiryChoices.map((choice) => <option key={choice.value} value={choice.value}>{choice.label}</option>)}</select></div>
       </div>
       <fieldset>
         <div className="mb-2 flex flex-wrap items-center justify-between gap-2"><legend className="text-xs text-slate-300">Scopes</legend><div className="flex gap-3 text-xs"><button type="button" className="text-emerald-300 hover:underline" onClick={() => setSelected(new Set(offered))}>Select all</button><button type="button" className="text-emerald-300 hover:underline" onClick={() => setSelected(new Set(readScopes(offered)))}>Read only</button><button type="button" className="text-slate-500 hover:underline" onClick={() => setSelected(new Set())}>Clear</button></div></div>
-        {offered.length ? <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">{resources.map(({ id, label }) => {
+        {offered.length ? <div className="grid gap-2">{resources.map(({ id, label }) => {
           const scopes = offered.filter((scope) => scope.startsWith(`${id}:`));
           if (!scopes.length) return null;
           return <div key={id} className="flex items-center justify-between gap-3 rounded-lg border border-white/10 bg-slate-950/40 px-3 py-2.5"><span className="text-sm font-medium text-slate-200">{label}</span><span className="flex gap-3">{scopes.map((scope) => {
@@ -96,8 +111,8 @@ function KeyFields({ myRole, myScopes, action, pending, error }: { myRole: strin
 export function RevokeKeyButton({ id, name }: { id: string; name: string }) {
   const [confirming, setConfirming] = useState(false);
   const [state, action, pending] = useActionState(revokeKeyControl, initial);
-  return <div className="flex flex-col items-start gap-2 lg:items-end">
-    {confirming ? <form action={action} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={id} /><span className="text-xs text-slate-400">Revoke <span className="font-medium text-slate-200">{name}</span>?</span><Button variant="destructive" size="sm" disabled={pending}>{pending ? "Revoking…" : "Revoke"}</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => setConfirming(false)}>Cancel</Button></form>
+  return <div className="flex flex-col items-start gap-2">
+    {confirming ? <form action={action} className="flex flex-wrap items-center gap-2"><input type="hidden" name="id" value={id} /><span className="min-w-0 text-xs text-slate-400 [overflow-wrap:anywhere]">Revoke <span className="font-medium text-slate-200">{name}</span>?</span><Button variant="destructive" size="sm" disabled={pending}>{pending ? "Revoking…" : "Revoke"}</Button><Button type="button" variant="ghost" size="sm" disabled={pending} onClick={() => setConfirming(false)}>Cancel</Button></form>
       : <Button type="button" variant="outline" size="sm" onClick={() => setConfirming(true)} aria-label={`Revoke ${name}`}>Revoke</Button>}
     {state.error ? <p role="alert" className="max-w-xs text-xs text-rose-300">{state.error}</p> : null}
   </div>;
