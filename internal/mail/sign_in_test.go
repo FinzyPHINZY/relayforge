@@ -66,3 +66,16 @@ func TestSignInHTMLEscapesLink(t *testing.T) {
 		t.Fatal("javascript: url was not neutralised to #ZgotmplZ")
 	}
 }
+
+func TestSignInLogo(t *testing.T) {
+	m := SignInMessage("bo@example.com", "https://relayforge.site/auth/email?token=rfm_abc")
+	if !strings.Contains(m.HTML, `<img src="https://relayforge.site/email/mark.png"`) {
+		t.Fatal("html missing the hosted logo")
+	}
+	for _, link := range []string{"http://localhost:3000/auth/email?token=rfm_abc", "not a url"} {
+		m := SignInMessage("bo@example.com", link)
+		if strings.Contains(m.HTML, "<img") {
+			t.Fatalf("link %q: logo should fall back to the plain mark", link)
+		}
+	}
+}
