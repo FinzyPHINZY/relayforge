@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import Link from "next/link";
-import { PublicSmoothScroll } from "@/components/public-smooth-scroll";
 import {
   Activity,
   ArrowLeft,
@@ -47,7 +46,6 @@ const controls = [
 
 export default function HowItWorksPage() {
   return <div className="landing workings">
-    <PublicSmoothScroll />
     <header className="landing-header"><div className="landing-container landing-header-inner">
       <Link href="/" className="landing-brand" aria-label="RelayForge home"><span className="landing-brand-mark"><Webhook size={21} aria-hidden="true" /></span><span>relayforge<span className="landing-brand-period">.</span></span></Link>
       <nav className="workings-nav" aria-label="Page navigation"><a href="#pipeline">Pipeline</a><a href="#crash-window">Crash window</a><a href="#proof">Measured proof</a><a href="#controls">Controls</a></nav>

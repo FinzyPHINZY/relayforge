@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { MeasuredCount } from "@/components/measured-count";
 import { LandingPipeline } from "@/components/landing-pipeline";
-import { PublicSmoothScroll } from "@/components/public-smooth-scroll";
 import {
   Activity,
   ArrowDownRight,
@@ -122,7 +121,6 @@ function Brand({ light = false }: { light?: boolean }) {
 export default function LandingPage() {
   return (
     <div className="landing">
-      <PublicSmoothScroll />
       <header className="landing-header">
         <div className="landing-container landing-header-inner">
           <Brand />
@@ -167,7 +165,7 @@ export default function LandingPage() {
               <span className="landing-kicker">TESTED UNDER FAILURE</span>
               <h2 id="scale-heading">10,000 events.<br /><em>Every one accounted for.</em></h2>
               <p>In a measured two-tenant run, RelayForge accepted 10,000 events, dispatched 10,000 outbox records, and reached a terminal outcome for every delivery while a worker crashed and the receiver injected timeouts and HTTP failures.</p>
-              <Link href="/how-it-works#proof" className="landing-scale-link">Explore the measured proof <ArrowRight size={16} aria-hidden="true" /></Link>
+              <Link href="/how-it-works#proof" scroll={false} className="landing-scale-link">Explore the measured proof <ArrowRight size={16} aria-hidden="true" /></Link>
             </div>
             <div className="landing-scale-results" aria-label="Measured reliability test results">
               <div className="landing-scale-primary"><span>ACCEPTED &amp; ACCOUNTED FOR</span><strong><MeasuredCount /> <small>/ 10,000</small></strong><p>Events, outbox records, and terminal deliveries reconciled.</p></div>
@@ -183,7 +181,7 @@ export default function LandingPage() {
             <p>Simple to publish. Deliberate about everything that happens after.</p>
           </div>
           <div className="landing-steps">
-            <div className="landing-step"><span className="landing-step-index">01 / PUBLISH</span><span className="landing-step-icon"><Terminal size={23} aria-hidden="true" /></span><h3>Send your event</h3><p>Publish once with an idempotency key. RelayForge returns after the event and its outbox entry commit together.</p><Link href="/docs#publish" className="landing-step-link">Publish with the Go or TypeScript SDK <ArrowRight size={14} aria-hidden="true" /></Link></div>
+            <div className="landing-step"><span className="landing-step-index">01 / PUBLISH</span><span className="landing-step-icon"><Terminal size={23} aria-hidden="true" /></span><h3>Send your event</h3><p>Publish once with an idempotency key. RelayForge returns after the event and its outbox entry commit together.</p><Link href="/docs#publish" scroll={false} className="landing-step-link">Publish with the Go or TypeScript SDK <ArrowRight size={14} aria-hidden="true" /></Link></div>
             <div className="landing-step"><span className="landing-step-index">02 / DELIVER</span><span className="landing-step-icon"><RadioTower size={23} aria-hidden="true" /></span><h3>We handle the handoff</h3><p>Matching endpoints receive signed HTTP requests. Workers track attempts and retry transient failures.</p></div>
             <div className="landing-step"><span className="landing-step-index">03 / RECOVER</span><span className="landing-step-icon"><Activity size={23} aria-hidden="true" /></span><h3>See what happened</h3><p>Inspect every attempt, review exhausted deliveries, and replay when the receiver is ready.</p></div>
           </div>
