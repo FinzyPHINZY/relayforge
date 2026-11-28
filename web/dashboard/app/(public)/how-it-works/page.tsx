@@ -15,7 +15,6 @@ import {
   ShieldCheck,
   Webhook,
 } from "lucide-react";
-import "../landing.css";
 import "./works.css";
 
 export const metadata: Metadata = {
@@ -46,11 +45,9 @@ const controls = [
 
 export default function HowItWorksPage() {
   return <div className="landing workings">
-    <header className="landing-header"><div className="landing-container landing-header-inner">
-      <Link href="/" className="landing-brand" aria-label="RelayForge home"><span className="landing-brand-mark"><Webhook size={21} aria-hidden="true" /></span><span>relayforge<span className="landing-brand-period">.</span></span></Link>
-      <nav className="workings-nav" aria-label="Page navigation"><a href="#pipeline">Pipeline</a><a href="#crash-window">Crash window</a><a href="#proof">Measured proof</a><a href="#controls">Controls</a></nav>
-      <Link href="/demo" className="landing-header-cta">Guided demo <ArrowUpRight size={16} aria-hidden="true" /></Link>
-    </div></header>
+    <nav className="workings-outline" aria-label="On this page"><div className="landing-container workings-outline-inner">
+      <span>ON THIS PAGE</span><a href="#pipeline">Pipeline</a><a href="#crash-window">Crash window</a><a href="#proof">Measured proof</a><a href="#controls">Controls</a>
+    </div></nav>
 
     <main>
       <section className="landing-container workings-hero" aria-labelledby="workings-title">

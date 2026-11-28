@@ -4,7 +4,10 @@
   --paper: #f6f7f1;
   --line: #dfe5db;
   --green: #b7f36d;
+  /* clip, not hidden: hidden makes a scroll container and stops the on-page bars from sticking.
+     hidden stays first as the fallback for safari before 16, which ignores clip */
   overflow: hidden;
+  overflow: clip;
   color: var(--ink);
   background: var(--paper);
   font-family: Arial, Helvetica, sans-serif;
@@ -21,8 +24,18 @@
 .landing-nav { display: flex; align-items: center; gap: 37px; margin-left: auto; margin-right: 30px; }
 .landing-nav a { display: inline-flex; align-items: center; gap: 4px; color: #58665d; font-size: 13px; font-weight: 600; transition: color .2s; }
 .landing-nav a:hover, .landing-nav a:focus-visible { color: #1d552b; }
+.landing-nav a[aria-current="page"] { color: #1d552b; box-shadow: 0 2px 0 #79ad3f; }
 .landing-header-cta { display: inline-flex; align-items: center; justify-content: center; gap: 14px; min-height: 43px; padding: 0 18px; border: 1px solid #1a3429; border-radius: 8px; color: white; background: #172b22; font-size: 13px; font-weight: 700; white-space: nowrap; transition: transform .2s, background .2s; }
 .landing-header-cta:hover { transform: translateY(-2px); background: #28523a; }
+.landing-header-shell { position: relative; z-index: 20; overflow: visible; }
+.landing-menu-button { display: none; place-items: center; flex: none; width: 40px; height: 40px; padding: 0; border: 1px solid #d3ddcf; border-radius: 8px; color: #1d3a2a; background: #fbfcf8; cursor: pointer; }
+.landing-menu-button:focus-visible { outline: 3px solid #79ad3f; outline-offset: 3px; }
+.landing-mobile-nav { position: absolute; top: 100%; left: 0; right: 0; border-bottom: 1px solid #e4e9df; background: #f6f7f1; box-shadow: 0 18px 30px rgba(21,39,33,.08); }
+.landing-mobile-nav[hidden] { display: none; }
+.landing-mobile-nav nav { display: grid; padding-block: 8px 14px; }
+.landing-mobile-nav a { display: flex; align-items: center; gap: 6px; min-height: 46px; border-bottom: 1px solid #e7ece3; color: #33463b; font-size: 15px; font-weight: 650; }
+.landing-mobile-nav a:last-child { border-bottom: 0; }
+.landing-mobile-nav a[aria-current="page"] { color: #1d552b; }
 
 .landing-hero { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, .9fr); align-items: center; gap: clamp(36px, 6vw, 88px); min-height: 695px; padding-block: 80px 92px; }
 .landing-hero-copy { position: relative; z-index: 1; animation: landing-rise .7s both; }
@@ -196,7 +209,13 @@
   .landing-console-guide { grid-template-columns: 1fr; }
 }
 
-@media (max-width: 900px) { .landing-nav { display: none; } }
+@media (max-width: 900px) {
+  .landing-nav { display: none; }
+  .landing-header-cta { margin-left: auto; }
+  .landing-menu-button { display: grid; }
+  .landing-header-inner { gap: 12px; }
+}
+@media (min-width: 901px) { .landing-mobile-nav { display: none; } }
 
 @media (max-width: 700px) {
   .landing-feature-grid, .landing-console-guide ol { grid-template-columns: 1fr; }
@@ -210,6 +229,7 @@
   .landing-brand { font-size: 20px; }
   .landing-nav { display: none; }
   .landing-header-cta { min-height: 38px; padding-inline: 12px; font-size: 11px; }
+  .landing-menu-button { width: 38px; height: 38px; }
   .landing-hero { gap: 53px; padding-block: 58px 78px; }
   .landing h1 { margin-block: 24px 18px; font-size: clamp(42px, 10vw, 60px); }
   .landing-hero-copy > p { font-size: 15px; }
@@ -249,4 +269,18 @@
 
 @media (prefers-reduced-motion: reduce) {
   .landing *, .landing *::before, .landing *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+}
+
+/* page-to-page fade: only the page content moves, the root and the header swap instantly */
+::view-transition-old(root), ::view-transition-new(root) { animation: none; }
+::view-transition-group(public-header), ::view-transition-new(public-header) { animation: none; }
+::view-transition-old(public-header) { display: none; }
+/* the group holds the old page where it was scrolled, then jumps to the new spot once the old one has faded */
+::view-transition-group(.public-page) { animation-duration: 120ms; animation-timing-function: step-end; }
+::view-transition-old(.public-page) { animation: public-page-out 120ms ease-out both; }
+::view-transition-new(.public-page) { animation: public-page-in 250ms ease-out 120ms both; }
+@keyframes public-page-out { to { opacity: 0; } }
+@keyframes public-page-in { from { opacity: 0; transform: translateY(10px); } }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }

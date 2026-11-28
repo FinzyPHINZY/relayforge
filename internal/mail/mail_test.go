@@ -55,3 +55,33 @@ func TestLogMailerCapAndLogging(t *testing.T) {
 		t.Fatal("LogBody did not log text")
 	}
 }
+
+func TestBuildSendEmailInputWithHTML(t *testing.T) {
+	in := buildSendEmailInput("f@relayforge.site", Message{To: "a@b.co", Subject: "s", Text: "t", HTML: "<p>h</p>"})
+	b := in.Content.Simple.Body
+	if b.Text == nil || *b.Text.Data != "t" || *b.Text.Charset != "UTF-8" {
+		t.Fatalf("text %+v", b.Text)
+	}
+	if b.Html == nil || *b.Html.Data != "<p>h</p>" || *b.Html.Charset != "UTF-8" {
+		t.Fatalf("html %+v", b.Html)
+	}
+}
+
+func TestLogMailerNeverLogsHTML(t *testing.T) {
+	var buf bytes.Buffer
+	l := &LogMailer{Logger: slog.New(slog.NewTextHandler(&buf, nil))}
+	m := SignInMessage("a@example.com", "https://x/secret-token")
+	_ = l.Send(context.Background(), m)
+	if strings.Contains(buf.String(), "secret-token") || strings.Contains(buf.String(), "<table") || strings.Contains(buf.String(), "a@example.com") {
+		t.Fatalf("default logging leaked: %s", buf.String())
+	}
+	buf.Reset()
+	l.LogBody = true
+	_ = l.Send(context.Background(), m)
+	if strings.Contains(buf.String(), "<table") || strings.Contains(buf.String(), "<html") {
+		t.Fatalf("LogBody logged html: %s", buf.String())
+	}
+	if !strings.Contains(buf.String(), "secret-token") {
+		t.Fatal("LogBody did not log text")
+	}
+}

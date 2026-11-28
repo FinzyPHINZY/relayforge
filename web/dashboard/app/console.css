@@ -43,3 +43,28 @@
 }
 
 .console-sidebar :where(a, button):focus-visible { outline-color: #b7f36d; }
+
+/* sheets: bottom sheet on small screens, side panel from 640px. radix waits for the closing animation before unmounting. */
+.rf-sheet-overlay[data-state="open"] { animation: rf-sheet-fade-in 180ms ease-out; }
+.rf-sheet-overlay[data-state="closed"] { animation: rf-sheet-fade-out 150ms ease-in forwards; }
+.rf-sheet[data-state="open"] { animation: rf-sheet-up-in 200ms ease-out; }
+.rf-sheet[data-state="closed"] { animation: rf-sheet-up-out 150ms ease-in forwards; }
+
+@media (min-width: 640px) {
+  .rf-sheet[data-side="right"][data-state="open"] { animation-name: rf-sheet-right-in; }
+  .rf-sheet[data-side="right"][data-state="closed"] { animation-name: rf-sheet-right-out; }
+}
+
+/* account menu */
+.rf-menu[data-state="open"] { animation: rf-sheet-fade-in 120ms ease-out; }
+
+@media (prefers-reduced-motion: reduce) {
+  .rf-sheet, .rf-sheet-overlay, .rf-menu { animation: none !important; }
+}
+
+@keyframes rf-sheet-fade-in { from { opacity: 0; } }
+@keyframes rf-sheet-fade-out { to { opacity: 0; } }
+@keyframes rf-sheet-up-in { from { transform: translateY(100%); } }
+@keyframes rf-sheet-up-out { to { transform: translateY(100%); } }
+@keyframes rf-sheet-right-in { from { transform: translateX(100%); } }
+@keyframes rf-sheet-right-out { to { transform: translateX(100%); } }

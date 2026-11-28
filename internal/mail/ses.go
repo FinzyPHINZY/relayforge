@@ -14,12 +14,16 @@ type SESMailer struct {
 }
 
 func buildSendEmailInput(from string, m Message) *sesv2.SendEmailInput {
+	body := &types.Body{Text: &types.Content{Data: aws.String(m.Text), Charset: aws.String("UTF-8")}}
+	if m.HTML != "" {
+		body.Html = &types.Content{Data: aws.String(m.HTML), Charset: aws.String("UTF-8")}
+	}
 	return &sesv2.SendEmailInput{
 		FromEmailAddress: aws.String(from),
 		Destination:      &types.Destination{ToAddresses: []string{m.To}},
 		Content: &types.EmailContent{Simple: &types.Message{
 			Subject: &types.Content{Data: aws.String(m.Subject), Charset: aws.String("UTF-8")},
-			Body:    &types.Body{Text: &types.Content{Data: aws.String(m.Text), Charset: aws.String("UTF-8")}},
+			Body:    body,
 		}},
 	}
 }

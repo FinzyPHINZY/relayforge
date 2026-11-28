@@ -3,7 +3,6 @@ import Link from "next/link";
 import { Code, Pair } from "@/components/docs-code";
 import { DocsOutline } from "@/components/docs-outline";
 import { ArrowLeft, ArrowRight, ArrowUpRight, CircleAlert, KeyRound, Webhook } from "lucide-react";
-import "../landing.css";
 import "../how-it-works/works.css";
 import "./docs.css";
 
@@ -223,12 +222,6 @@ const headerRows = [
 
 export default function DocsPage() {
   return <div className="landing workings docs">
-    <header className="landing-header"><div className="landing-container landing-header-inner">
-      <Link href="/" className="landing-brand" aria-label="RelayForge home"><span className="landing-brand-mark"><Webhook size={21} aria-hidden="true" /></span><span>relayforge<span className="landing-brand-period">.</span></span></Link>
-      <nav className="workings-nav" aria-label="Page navigation"><a href="#install">Install</a><a href="#publish">Publish</a><a href="#receive">Receive</a></nav>
-      <Link href="/dashboard" className="landing-header-cta">Open console <ArrowUpRight size={16} aria-hidden="true" /></Link>
-    </div></header>
-
     <main>
       <section className="landing-container docs-hero" aria-labelledby="docs-title">
         <Link href="/" className="workings-back"><ArrowLeft size={15} aria-hidden="true" /> Back to RelayForge</Link>
