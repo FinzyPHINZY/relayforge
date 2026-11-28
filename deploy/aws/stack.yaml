@@ -27,9 +27,10 @@ Parameters:
   InstanceType:
     Type: String
     Default: m7i-flex.large
-  LatestAmi:
-    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
-    Default: /aws/service/ami-amazon-linux-latest/al2023-ami-kernel-default-x86_64
+  HostImageId:
+    Type: AWS::EC2::Image::Id
+    Default: ami-0f71b90bee7050a75
+    Description: AMI of the running host. Pinned because a changed ImageId replaces the instance; change it only as a planned host rebuild.
 Resources:
   ReleaseBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -121,9 +122,9 @@ Resources:
     Metadata:
       com.aws.cloudformation.Context:
         why: Runs the existing Compose application, PostgreSQL, Redis, and HTTPS proxy. The API container sends SES email with host-role credentials from IMDSv2; a response hop limit of 2 lets containers on the Docker bridge network reach IMDS.
-        must: Preserve the instance and its encrypted root volume until data migration is planned. Keep HttpTokens required and HttpPutResponseHopLimit 2; never put AWS access keys in the env file.
+        must: Preserve the instance and its encrypted root volume until data migration is planned. Keep HttpTokens required and HttpPutResponseHopLimit 2; keep ImageId pinned (HostImageId) so stack updates never replace the host; never put AWS access keys in the env file.
     Properties:
-      ImageId: !Ref LatestAmi
+      ImageId: !Ref HostImageId
       InstanceType: !Ref InstanceType
       IamInstanceProfile: !Ref HostProfile
       SubnetId: subnet-051dd2090ee8b5f84
