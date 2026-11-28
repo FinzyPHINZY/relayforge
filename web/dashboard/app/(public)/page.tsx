@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 
 export const metadata: Metadata = {
-  title: "RelayForge — Webhooks built to make it through",
+  title: "RelayForge | Webhooks built to make it through",
   description:
     "Durable event acceptance, signed webhook delivery, retries, and a clear path to recovery. Explore RelayForge's reliable webhook infrastructure.",
 };

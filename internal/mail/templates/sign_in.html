@@ -34,8 +34,8 @@
           <td class="rf-head" bgcolor="#14281e" style="padding:26px 40px;background-color:#14281e;border-radius:15px 15px 0 0;">
             <table role="presentation" cellpadding="0" cellspacing="0" border="0">
               <tr>
-                <td width="26" height="26" bgcolor="#b7f36d" style="width:26px;height:26px;background-color:#b7f36d;border-radius:7px;font-size:0;line-height:0;">&nbsp;</td>
-                <td bgcolor="#14281e" style="padding-left:12px;background-color:#14281e;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:19px;line-height:26px;font-weight:700;letter-spacing:-0.3px;color:#b7f36d;">relayforge.</td>
+                {{if .LogoURL}}<td width="32" height="32" valign="middle" bgcolor="#14281e" style="width:32px;height:32px;background-color:#14281e;font-size:0;line-height:0;"><img src="{{.LogoURL}}" width="32" height="32" alt="" style="display:block;width:32px;height:32px;border:0;outline:none;text-decoration:none;"></td>{{else}}<td width="26" height="26" bgcolor="#b7f36d" style="width:26px;height:26px;background-color:#b7f36d;border-radius:7px;font-size:0;line-height:0;">&nbsp;</td>{{end}}
+                <td valign="middle" bgcolor="#14281e" style="padding-left:10px;background-color:#14281e;font-family:-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;font-size:19px;line-height:26px;font-weight:700;letter-spacing:-0.3px;color:#b7f36d;">relayforge.</td>
               </tr>
             </table>
           </td>
