@@ -13,7 +13,7 @@ export function isActiveNav(pathname: string, href: string): boolean {
   return normalize(pathname) === normalize(href);
 }
 
-/** Where a public page should land after navigating to url: the top, or a decoded "#id". */
+/** where a public page should land after navigating to url: the top, or a decoded "#id". */
 export function scrollTargetFor(url: string): "top" | string {
   const at = url.indexOf("#");
   if (at === -1 || at === url.length - 1) return "top";

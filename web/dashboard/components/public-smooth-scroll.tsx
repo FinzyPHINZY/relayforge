@@ -6,10 +6,14 @@ import type Lenis from "lenis";
 import { scrollTargetFor } from "@/lib/public-nav";
 import "lenis/dist/lenis.css";
 
+function reducedMotion(): boolean {
+  return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+}
+
 function settle(lenis: Lenis, fromHistory: boolean) {
   const target = scrollTargetFor(window.location.href);
   if (target !== "top") {
-    if (document.getElementById(target.slice(1))) lenis.scrollTo(target);
+    if (document.getElementById(target.slice(1))) lenis.scrollTo(target, { immediate: reducedMotion() });
     return;
   }
   // back/forward keeps the position the browser restored; lenis just needs to pick it up.
@@ -17,7 +21,7 @@ function settle(lenis: Lenis, fromHistory: boolean) {
   else lenis.scrollTo(0, { immediate: true });
 }
 
-/** One Lenis instance for the public pages; it follows route changes instead of being recreated. */
+/** one lenis instance for the public pages; it follows route changes instead of being recreated. */
 export function PublicSmoothScroll() {
   const pathname = usePathname();
   const lenisRef = useRef<Lenis | null>(null);
@@ -28,7 +32,16 @@ export function PublicSmoothScroll() {
     let cancelled = false;
     let frame = 0;
     const onPopState = () => { fromHistory.current = true; };
+    // a same-page hash back/forward never changes the pathname, so its flag must not leak into the next push.
+    const onHashChange = () => { fromHistory.current = false; };
     window.addEventListener("popstate", onPopState);
+    window.addEventListener("hashchange", onHashChange);
+    const cleanup = () => {
+      window.removeEventListener("popstate", onPopState);
+      window.removeEventListener("hashchange", onHashChange);
+    };
+    // reduced motion keeps native scrolling, which next already lands on hash targets.
+    if (reducedMotion()) return cleanup;
 
     import("lenis").then(({ default: LenisClass }) => {
       if (cancelled) return;
@@ -48,7 +61,7 @@ export function PublicSmoothScroll() {
     return () => {
       cancelled = true;
       window.cancelAnimationFrame(frame);
-      window.removeEventListener("popstate", onPopState);
+      cleanup();
       lenisRef.current?.destroy();
       lenisRef.current = null;
     };

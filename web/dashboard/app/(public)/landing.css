@@ -4,7 +4,9 @@
   --paper: #f6f7f1;
   --line: #dfe5db;
   --green: #b7f36d;
-  /* clip, not hidden: hidden makes a scroll container and stops the on-page bars from sticking */
+  /* clip, not hidden: hidden makes a scroll container and stops the on-page bars from sticking.
+     hidden stays first as the fallback for safari before 16, which ignores clip */
+  overflow: hidden;
   overflow: clip;
   color: var(--ink);
   background: var(--paper);
