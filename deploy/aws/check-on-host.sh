@@ -9,4 +9,4 @@ docker run --rm --network host \
 
 docker run --rm \
   -v "$PWD":/work -w /work \
-  node:22 sh -c 'corepack enable && cd web/dashboard && pnpm install --frozen-lockfile && pnpm test && pnpm typecheck && pnpm build && cd ../.. && web/dashboard/node_modules/.bin/tsc -p sdk/typescript/tsconfig.json && node sdk/typescript/test/client.test.mjs'
+  node:22 sh -c 'corepack enable && cd web/dashboard && rm -rf .next && pnpm install --frozen-lockfile && pnpm test && pnpm typecheck && pnpm build && cd ../.. && web/dashboard/node_modules/.bin/tsc -p sdk/typescript/tsconfig.json && node sdk/typescript/test/client.test.mjs'
