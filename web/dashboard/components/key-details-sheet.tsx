@@ -45,15 +45,15 @@ export function KeyDetailsSheet({ apiKey, canWrite, now }: { apiKey: ApiKey; can
 
   return <Sheet open={open} onOpenChange={(next) => { setOpen(next); if (!next) setRevokedHere(false); }}>
     <SheetTrigger asChild>
-      <button type="button" aria-label={`View details for ${apiKey.name}`} className={`group flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-white/5 ${live ? "" : "opacity-70"}`}>
-        <div className="min-w-0 flex-1 sm:grid sm:grid-cols-[minmax(0,1fr)_10rem_5.5rem_6rem] sm:items-center sm:gap-4">
-          <div className="flex min-w-0 items-center gap-2"><span className="truncate font-medium text-slate-100">{apiKey.name}</span>{live ? null : <StatusBadge status={status} />}</div>
-          <div className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 sm:contents">
+      <button type="button" className={`group flex w-full items-center gap-3 rounded-lg px-3 py-3 text-left transition-colors hover:bg-white/5 ${live ? "" : "opacity-70"}`}>
+        <span className="block min-w-0 flex-1 sm:grid sm:grid-cols-[minmax(0,1fr)_10rem_5.5rem_6rem] sm:items-center sm:gap-4">
+          <span className="flex min-w-0 items-center gap-2"><span className="truncate font-medium text-slate-100"><span className="sr-only">View details for </span>{apiKey.name}</span>{live ? null : <StatusBadge status={status} />}</span>
+          <span className="mt-1 flex min-w-0 flex-wrap gap-x-3 gap-y-1 text-xs text-slate-500 sm:contents">
             <code className="truncate font-mono text-xs text-slate-300">{apiKey.prefix}…</code>
             <span className="capitalize text-slate-400 sm:text-sm sm:text-slate-300">{apiKey.role}</span>
-            <span className="text-slate-400 sm:text-sm sm:text-slate-300"><span className="sm:hidden">Last used </span>{lastUsed === "Never" ? <span className="text-slate-500">{lastUsed}</span> : lastUsed}</span>
-          </div>
-        </div>
+            <span className="text-slate-400 sm:text-sm sm:text-slate-300"><span className="sm:sr-only">Last used </span>{lastUsed === "Never" ? <span className="text-slate-500">{lastUsed}</span> : lastUsed}</span>
+          </span>
+        </span>
         <ChevronRight size={16} aria-hidden="true" className="shrink-0 text-slate-500 transition-transform group-hover:translate-x-0.5" />
       </button>
     </SheetTrigger>

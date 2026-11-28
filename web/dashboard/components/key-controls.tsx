@@ -1,11 +1,11 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState, useEffect, useState } from "react";
 import { Check, Copy, Plus, TriangleAlert } from "lucide-react";
 import { createKeyControl, revokeKeyControl, type ControlState } from "@/app/console-actions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetDescription, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { allowedRoles, expiryChoices, offeredScopes, type Role } from "@/lib/key-form";
 
 const initial: ControlState = {};
@@ -40,28 +40,34 @@ export function CopyButton({ value, label = "Copy" }: { value: string; label?: s
 
 // the fields live in a child keyed by the created key's id, so a successful create
 // remounts them with defaults.
-export function CreateKeyForm({ myRole, myScopes }: { myRole: string; myScopes: string[] }) {
+export function CreateKeyForm({ myRole, myScopes, onSecretShown }: { myRole: string; myScopes: string[]; onSecretShown?: (shown: boolean) => void }) {
   const [state, action, pending] = useActionState(createKeyControl, initial);
+  const shown = Boolean(state.secret);
+  useEffect(() => { onSecretShown?.(shown); }, [shown, onSecretShown]);
   if (!allowedRoles(myRole).length) return <p className="text-sm text-slate-500">Your role can't issue keys in this workspace.</p>;
   return <div>
     {state.secret ? <div role="status" className="mb-6 rounded-xl border border-amber-400/30 bg-amber-400/10 p-4">
       <div className="flex items-start gap-3"><TriangleAlert size={18} aria-hidden="true" className="mt-0.5 shrink-0 text-amber-300" /><div className="min-w-0 flex-1"><p className="text-sm font-semibold text-amber-200">{state.success} Copy it now.</p><p className="mt-1 text-xs text-amber-100">You won't see this key again.</p></div></div>
       <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"><code className="block min-w-0 flex-1 break-all rounded-lg border border-white/10 bg-slate-900 px-3 py-2 font-mono text-sm text-white">{state.secret}</code><CopyButton value={state.secret} /></div>
+      {onSecretShown ? <div className="mt-3 flex justify-end"><SheetClose asChild><Button type="button" size="sm">Done</Button></SheetClose></div> : null}
     </div> : null}
     <KeyFields key={state.id ?? "new"} myRole={myRole} myScopes={myScopes} action={action} pending={pending} error={state.error} />
   </div>;
 }
 
-// the sheet's content unmounts on close, taking the form state and any one-time secret with it.
+// the sheet's content unmounts on close, taking the form state and any one-time secret with it,
+// so while the secret is showing only the close or done buttons dismiss it.
 export function CreateKeySheet({ myRole, myScopes }: { myRole: string; myScopes: string[] }) {
-  return <Sheet>
+  const [secretShown, setSecretShown] = useState(false);
+  const guard = (event: Event) => { if (secretShown) event.preventDefault(); };
+  return <Sheet onOpenChange={(open) => { if (!open) setSecretShown(false); }}>
     <SheetTrigger asChild><Button type="button"><Plus size={16} aria-hidden="true" />Create key</Button></SheetTrigger>
-    <SheetContent side="right" onOpenAutoFocus={(event) => {
+    <SheetContent side="right" onInteractOutside={guard} onEscapeKeyDown={guard} onOpenAutoFocus={(event) => {
       const name = document.getElementById("keyName");
       if (name) { event.preventDefault(); name.focus(); }
     }}>
       <SheetHeader><SheetTitle>Create a key</SheetTitle><SheetDescription>The key is shown once. Store it in your secret manager.</SheetDescription></SheetHeader>
-      <CreateKeyForm myRole={myRole} myScopes={myScopes} />
+      <CreateKeyForm myRole={myRole} myScopes={myScopes} onSecretShown={setSecretShown} />
     </SheetContent>
   </Sheet>;
 }

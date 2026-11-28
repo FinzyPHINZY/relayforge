@@ -11,8 +11,8 @@ export const SheetClose = SheetPrimitive.Close;
 
 // "right" is a side panel from 640px up and a bottom sheet below it; "bottom" is always a bottom sheet.
 const sides = {
-  right: "inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0",
-  bottom: "inset-x-0 bottom-0 max-h-[85vh] rounded-t-2xl border-t",
+  right: "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-2xl border-t sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-full sm:max-w-md sm:rounded-none sm:border-l sm:border-t-0",
+  bottom: "inset-x-0 bottom-0 max-h-[85dvh] rounded-t-2xl border-t",
 } as const;
 
 export function SheetContent({ className, children, side = "right", ...props }: React.ComponentProps<typeof SheetPrimitive.Content> & { side?: keyof typeof sides }) {
